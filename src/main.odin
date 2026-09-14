@@ -1,0 +1,248 @@
+package learn_sdlgpu
+
+import im "extern:imgui"
+
+import "base:runtime"
+import "core:log"
+import "core:mem"
+import "core:sys/windows"
+import sdl "vendor:sdl3"
+
+g_state: struct {
+	default_context: runtime.Context,
+	should_close:    bool,
+}
+
+g_vertex := #load("shader.vert.spv")
+g_fragment := #load("shader.frag.spv")
+
+main :: proc() {
+	// windows specific fix
+	when ODIN_OS == .Windows {
+		windows.SetProcessDPIAware()
+	}
+
+	// setup logging (NOTE: no allocation tracking)
+	cl := log.create_console_logger(opt = {.Level})
+	defer log.destroy_console_logger(cl)
+	context.logger = cl
+
+	// setup allocation
+	when ODIN_DEBUG {
+		debug_mode := true
+		tracking_allocator := create_tracking_allocator(context.allocator)
+		defer destroy_tracking_allocator(tracking_allocator)
+		context.allocator = tracking_allocator
+
+		tracking_temp_allocator := create_tracking_allocator(context.temp_allocator)
+		defer destroy_tracking_allocator(tracking_temp_allocator, temp = true)
+		context.temp_allocator = tracking_temp_allocator
+
+		sdl_log_priority: sdl.LogPriority = .VERBOSE
+	} else {
+		debug_mode := false
+		sdl_log_priority: sdl.LogPriority = .INFO
+	}
+
+	g_state.default_context = context
+
+	sdl.SetLogPriorities(sdl_log_priority)
+	sdl.SetLogOutputFunction(sdl_log_adapter, nil)
+
+	log.info("Initializing program")
+
+	if debug_mode {
+		log.debug("-------- Debug mode --------")
+	}
+
+	// window
+	window, device := window_create_and_device()
+	defer window_destroy(window, device)
+
+	// developer UI
+	devui_init(window, device)
+	defer devui_shutdown(device)
+
+	vertex_shader := sdl.CreateGPUShader(
+		device,
+		{
+			code_size = len(g_vertex),
+			code = raw_data(g_vertex),
+			entrypoint = "main",
+			format = {.SPIRV},
+			stage = .VERTEX,
+		},
+	)
+	defer sdl.ReleaseGPUShader(device, vertex_shader)
+
+	fragment_shader := sdl.CreateGPUShader(
+		device,
+		{
+			code_size = len(g_fragment),
+			code = raw_data(g_fragment),
+			entrypoint = "main",
+			format = {.SPIRV},
+			stage = .FRAGMENT,
+		},
+	)
+	defer sdl.ReleaseGPUShader(device, fragment_shader)
+
+	// create the pipeline
+	pipeline := sdl.CreateGPUGraphicsPipeline(
+		device,
+		{
+			vertex_shader = vertex_shader,
+			fragment_shader = fragment_shader,
+			primitive_type = .TRIANGLELIST,
+			target_info = {
+				num_color_targets = 1,
+				color_target_descriptions = &sdl.GPUColorTargetDescription {
+					format = sdl.GetGPUSwapchainTextureFormat(device, window),
+				},
+			},
+		},
+	)
+	defer sdl.ReleaseGPUGraphicsPipeline(device, pipeline)
+
+	for !g_state.should_close {
+		events_handle(process_key_input, process_events)
+
+		// create command buffer
+		cmd_buf := sdl.AcquireGPUCommandBuffer(device)
+
+		// adquire swapchain texture
+		swapchain_tex: ^sdl.GPUTexture
+		sdl_assert(
+			sdl.WaitAndAcquireGPUSwapchainTexture(cmd_buf, window, &swapchain_tex, nil, nil),
+		)
+
+		if swapchain_tex != nil {
+			// render application
+			render(swapchain_tex, cmd_buf, pipeline)
+
+			// render ui
+			devui_begin_frame()
+			main_ui_window()
+			devui_render_frame(swapchain_tex, cmd_buf)
+		}
+
+		sdl_assert(sdl.SubmitGPUCommandBuffer(cmd_buf))
+
+		free_all(context.temp_allocator)
+	}
+}
+
+render :: proc(
+	target_texture: ^sdl.GPUTexture,
+	cmd_buf: ^sdl.GPUCommandBuffer,
+	pipeline: ^sdl.GPUGraphicsPipeline,
+) {
+	// drawing
+	color_target := sdl.GPUColorTargetInfo {
+		texture     = target_texture,
+		load_op     = .CLEAR,
+		clear_color = {0, 0.2, 0.4, 1},
+		store_op    = .STORE,
+	}
+	// render pass
+	render_pass := sdl.BeginGPURenderPass(cmd_buf, &color_target, 1, nil)
+
+	// bind pipeline
+	sdl.BindGPUGraphicsPipeline(render_pass, pipeline)
+	// bind vertex data
+	// bind uniforms
+	// draw calls
+	sdl.DrawGPUPrimitives(render_pass, 3, 1, 0, 0)
+
+	sdl.EndGPURenderPass(render_pass)
+}
+
+main_ui_window :: proc() {
+	im.Begin("Learning SDL_GPU")
+	defer im.End()
+}
+
+process_key_input :: proc() {
+	switch {
+	case events_is_key_just_pressed(.ESCAPE):
+		g_state.should_close = true
+	}
+}
+
+process_events :: proc(event: sdl.Event) {
+	#partial switch event.type {
+	case .QUIT:
+		toggle(&g_state.should_close)
+	}
+}
+
+sdl_log_adapter :: proc "c" (
+	_userdata: rawptr,
+	category: sdl.LogCategory,
+	priority: sdl.LogPriority,
+	message: cstring,
+) {
+	context = g_state.default_context
+
+	switch priority {
+	case .INVALID:
+		fallthrough
+	case .TRACE:
+		fallthrough
+	case .VERBOSE:
+		fallthrough
+	case .DEBUG:
+		log.debugf("[SDL %s] %s", category, message)
+	case .INFO:
+		log.infof("[SDL %s] %s", category, message)
+	case .WARN:
+		log.warnf("[SDL %s] %s", category, message)
+	case .ERROR:
+		log.errorf("[SDL %s] %s", category, message)
+	case .CRITICAL:
+		log.fatalf("[SDL %s] %s", category, message)
+	}
+}
+
+MAX_ALLOCATION_ERROR_MESSAGES :: 20
+
+create_tracking_allocator :: proc(allocator: mem.Allocator) -> mem.Allocator {
+	tracking_allocator := new(mem.Tracking_Allocator)
+	mem.tracking_allocator_init(tracking_allocator, allocator)
+	return mem.tracking_allocator(tracking_allocator)
+}
+
+destroy_tracking_allocator :: proc(allocator: mem.Allocator, temp := false) -> bool {
+	a := cast(^mem.Tracking_Allocator)allocator.data
+	err := false
+	remaining_allocations := len(a.allocation_map)
+
+	if remaining_allocations > 0 {
+		prefix := temp ? "Temp Allocator" : "Heap Allocator"
+		log.errorf(
+			"(%s) Leaked allocation count: %v",
+			prefix,
+			len(a.allocation_map),
+		)
+	}
+
+	allocations_noticed := 0
+	for _, v in a.allocation_map {
+		log.errorf("%v: Leaked %v bytes", v.location, v.size)
+		err = true
+		allocations_noticed += 1
+
+		if allocations_noticed > MAX_ALLOCATION_ERROR_MESSAGES {
+			log.errorf(
+				"(... +%d leaked allocations)",
+				remaining_allocations - allocations_noticed + 1,
+			)
+			break
+		}
+	}
+
+	mem.tracking_allocator_destroy(a)
+	free(a)
+
+	return err
+}
