@@ -4,6 +4,7 @@ import im "extern:imgui"
 
 import "base:runtime"
 import "core:log"
+import glm "core:math/linalg/glsl"
 import "core:mem"
 import "core:sys/windows"
 import sdl "vendor:sdl3"
@@ -15,6 +16,11 @@ g_state: struct {
 
 g_vertex := #load("shader.vert.spv")
 g_fragment := #load("shader.frag.spv")
+
+// must be aligned to 16 bytes as required by the std140 layout
+UBO :: struct #max_field_align(16) {
+	mvp: glm.mat4,
+}
 
 main :: proc() {
 	// windows specific fix
@@ -71,9 +77,12 @@ main :: proc() {
 			entrypoint = "main",
 			format = {.SPIRV},
 			stage = .VERTEX,
+			num_uniform_buffers = UNIFORM_BUFFERS,
 		},
 	)
 	defer sdl.ReleaseGPUShader(device, vertex_shader)
+
+	UNIFORM_BUFFERS :: 1
 
 	fragment_shader := sdl.CreateGPUShader(
 		device,
@@ -83,9 +92,12 @@ main :: proc() {
 			entrypoint = "main",
 			format = {.SPIRV},
 			stage = .FRAGMENT,
+			num_uniform_buffers = UNIFORM_BUFFERS,
 		},
 	)
 	defer sdl.ReleaseGPUShader(device, fragment_shader)
+
+	proj_mat := glm.mat4Perspective(glm.radians_f32(70), window_get_aspect_ratio(window), 0.0001, 1000.0)
 
 	// create the pipeline
 	pipeline := sdl.CreateGPUGraphicsPipeline(
@@ -104,8 +116,32 @@ main :: proc() {
 	)
 	defer sdl.ReleaseGPUGraphicsPipeline(device, pipeline)
 
+	timing: Timings
+
+	x_pos := f32(0.0)
+	angle := f32(0.0)
+	scale := f32(1.0)
+
 	for !g_state.should_close {
 		events_handle(process_key_input, process_events)
+		timing_update(&timing)
+
+		model_mat := glm.mat4(1)
+		time := timing_get_elapsed_seconds()
+
+		trans_speed := f32(1.0)
+		x_pos += glm.cos(time) * trans_speed * timing.delta_time
+		model_mat *= glm.mat4Translate({x_pos, 0, -5})
+
+		rot_speed := glm.radians_f32(90)
+		angle += rot_speed * timing.delta_time
+		model_mat *= glm.mat4Rotate({0, 1, 0}, angle)
+
+		scaling_amplitude := f32(0.5)
+		scale += glm.cos(time) * scaling_amplitude * timing.delta_time
+		model_mat *= glm.mat4Scale({scale, scale, 1.0})
+
+		model_view_projection := proj_mat * model_mat
 
 		// create command buffer
 		cmd_buf := sdl.AcquireGPUCommandBuffer(device)
@@ -118,7 +154,7 @@ main :: proc() {
 
 		if swapchain_tex != nil {
 			// render application
-			render(swapchain_tex, cmd_buf, pipeline)
+			render(swapchain_tex, cmd_buf, pipeline, &{mvp = model_view_projection})
 
 			// render ui
 			devui_begin_frame()
@@ -136,6 +172,7 @@ render :: proc(
 	target_texture: ^sdl.GPUTexture,
 	cmd_buf: ^sdl.GPUCommandBuffer,
 	pipeline: ^sdl.GPUGraphicsPipeline,
+	ubo: ^UBO,
 ) {
 	// drawing
 	color_target := sdl.GPUColorTargetInfo {
@@ -151,6 +188,7 @@ render :: proc(
 	sdl.BindGPUGraphicsPipeline(render_pass, pipeline)
 	// bind vertex data
 	// bind uniforms
+	sdl.PushGPUVertexUniformData(cmd_buf, 0, ubo, size_of(UBO))
 	// draw calls
 	sdl.DrawGPUPrimitives(render_pass, 3, 1, 0, 0)
 
@@ -219,11 +257,7 @@ destroy_tracking_allocator :: proc(allocator: mem.Allocator, temp := false) -> b
 
 	if remaining_allocations > 0 {
 		prefix := temp ? "Temp Allocator" : "Heap Allocator"
-		log.errorf(
-			"(%s) Leaked allocation count: %v",
-			prefix,
-			len(a.allocation_map),
-		)
+		log.errorf("(%s) Leaked allocation count: %v", prefix, len(a.allocation_map))
 	}
 
 	allocations_noticed := 0
