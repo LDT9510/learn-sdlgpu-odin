@@ -22,6 +22,13 @@ UBO :: struct #max_field_align(16) {
 	mvp: glm.mat4,
 }
 
+UI_bool :: struct {
+	name:    cstring,
+	value:   bool,
+	toggled: bool,
+}
+g_vsync := UI_bool{"VSYNC", false, false}
+
 main :: proc() {
 	// windows specific fix
 	when ODIN_OS == .Windows {
@@ -97,7 +104,12 @@ main :: proc() {
 	)
 	defer sdl.ReleaseGPUShader(device, fragment_shader)
 
-	proj_mat := glm.mat4Perspective(glm.radians_f32(70), window_get_aspect_ratio(window), 0.0001, 1000.0)
+	proj_mat := glm.mat4Perspective(
+		glm.radians_f32(70),
+		window_get_aspect_ratio(window),
+		0.0001,
+		1000.0,
+	)
 
 	// create the pipeline
 	pipeline := sdl.CreateGPUGraphicsPipeline(
@@ -116,35 +128,48 @@ main :: proc() {
 	)
 	defer sdl.ReleaseGPUGraphicsPipeline(device, pipeline)
 
-	timing: Timings
+	timings: Timings
 
 	x_pos := f32(0.0)
 	angle := f32(0.0)
-	scale := f32(1.0)
+	scale := f32(2.0)
 
 	for !g_state.should_close {
 		events_handle(process_key_input, process_events)
-		timing_update(&timing)
+		timing_update(&timings)
 
 		model_mat := glm.mat4(1)
 		time := timing_get_elapsed_seconds()
 
 		trans_speed := f32(1.0)
-		x_pos += glm.cos(time) * trans_speed * timing.delta_time
+		x_pos += glm.cos(time) * trans_speed * timings.delta_time
 		model_mat *= glm.mat4Translate({x_pos, 0, -5})
 
 		rot_speed := glm.radians_f32(90)
-		angle += rot_speed * timing.delta_time
+		angle += rot_speed * timings.delta_time
 		model_mat *= glm.mat4Rotate({0, 1, 0}, angle)
 
-		scaling_amplitude := f32(0.5)
-		scale += glm.cos(time) * scaling_amplitude * timing.delta_time
+		scaling_amplitude := f32(1.0)
+		scale += glm.cos(time) * scaling_amplitude * timings.delta_time
 		model_mat *= glm.mat4Scale({scale, scale, 1.0})
 
 		model_view_projection := proj_mat * model_mat
 
 		// create command buffer
 		cmd_buf := sdl.AcquireGPUCommandBuffer(device)
+
+		if g_vsync.toggled {
+			log.infof("%s %s", g_vsync.name, g_vsync.value ? "ON" : "OFF")
+			sdl_assert(
+				sdl.SetGPUSwapchainParameters(
+					device,
+					window,
+					.SDR,
+					g_vsync.value ? .VSYNC : .IMMEDIATE,
+				),
+			)
+			g_vsync.toggled = false
+		}
 
 		// adquire swapchain texture
 		swapchain_tex: ^sdl.GPUTexture
@@ -158,7 +183,7 @@ main :: proc() {
 
 			// render ui
 			devui_begin_frame()
-			main_ui_window()
+			main_ui_window(timings, window, device)
 			devui_render_frame(swapchain_tex, cmd_buf)
 		}
 
@@ -195,8 +220,18 @@ render :: proc(
 	sdl.EndGPURenderPass(render_pass)
 }
 
-main_ui_window :: proc() {
+main_ui_window :: proc(t: Timings, w: ^sdl.Window, d: ^sdl.GPUDevice) {
 	im.Begin("Learning SDL_GPU")
+
+	g_vsync.toggled = im.RadioButtonIntPtr("VSYNC", cast(^i32)&g_vsync.value, 1)
+	im.SameLine()
+	g_vsync.toggled ||= im.RadioButtonIntPtr("IMMEDIATE", cast(^i32)&g_vsync.value, 0)
+
+	if im.CollapsingHeader("Timings", {.DefaultOpen}) {
+		im.Text("FPS: %d", t.fps)
+		im.Text("Frame time: %.2f ms", t.frame_time_ms)
+	}
+
 	defer im.End()
 }
 
