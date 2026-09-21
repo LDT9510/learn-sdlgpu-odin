@@ -27,7 +27,7 @@ UI_bool :: struct {
 	value:   bool,
 	toggled: bool,
 }
-g_vsync := UI_bool{"VSYNC", false, false}
+g_vsync := UI_bool{"VSYNC", true, false}
 
 main :: proc() {
 	// windows specific fix
@@ -112,6 +112,10 @@ main :: proc() {
 	})
 	defer sdl.ReleaseGPUSampler(device, sampler)
 
+	// ------------------ load models ------------------
+	car_model, model_ok := content_load_obj_model("sedan-sports")
+	assert(model_ok)
+
 	// ------------------ load shaders ------------------
 
 	vertex_shader := sdl.CreateGPUShader(device, {
@@ -142,33 +146,38 @@ main :: proc() {
 
 	Vertex_Data :: struct {
 		positions: glm.vec3,
-		colors:    glm.vec4,
 		uv:        glm.vec2,
 	}
 
-	// create vertex data
-	vertices := [?]Vertex_Data {
-		{{-0.5,  0.5, 0}, {1.0, 0.0, 0.0, 0}, {0, 0}},
-		{{ 0.5,  0.5, 0}, {1.0, 1.0, 0.0, 0}, {1, 0}},
-		{{-0.5, -0.5, 0}, {0.0, 0.0, 1.0, 0}, {0, 1}},
-		{{ 0.5, -0.5, 0}, {0.0, 0.0, 1.0, 0}, {1, 1}},
+	// create vertex and index data from the model
+	vertices := make([]Vertex_Data, len(car_model.faces))
+	indices := make([]u16, len(car_model.faces))
+
+	for face, i in car_model.faces {
+		vertices[i] = {
+			positions = car_model.positions[face.pos],
+			uv = car_model.uvs[face.uv],
+		}
+		indices[i] = u16(i)
 	}
+
+	// the model is safe to delete now
+	content_destroy_obj_model(car_model)
+
+	vertex_data_size := u32(len(vertices) * size_of(vertices[0]))
+	index_data_size := u32(len(indices) * size_of(indices[0]))
+
 	// create vertex buffers
 	vertex_buf := sdl.CreateGPUBuffer(device, {
 		usage = {.VERTEX},
-		size  = size_of(vertices),
+		size  = vertex_data_size,
 	})
 	defer sdl.ReleaseGPUBuffer(device, vertex_buf)
 
-	// create index data
-	indices := [?]u16 {
-		0, 1, 2,
-		2, 1, 3,
-	}
 	// create index buffers
 	index_buf := sdl.CreateGPUBuffer(device, {
 		usage = {.INDEX},
-		size  = size_of(indices),
+		size  = index_data_size,
 	})
 	defer sdl.ReleaseGPUBuffer(device, index_buf)
 
@@ -177,16 +186,18 @@ main :: proc() {
 	// create a transfer buffer (GPU memory mapped to CPU memory)
 	transfer_buf := sdl.CreateGPUTransferBuffer(device, {
 		usage = .UPLOAD,
-		size  = size_of(vertices) + size_of(indices),
+		size  = vertex_data_size + index_data_size,
 	})
 
 	// map the buffer to the GPU memory and copy
 	transfer_mem := cast([^]byte)sdl.MapGPUTransferBuffer(device, transfer_buf, false)
-	mem.copy(transfer_mem, &vertices, size_of(vertices))
-	mem.copy(transfer_mem[size_of(vertices):], &indices, size_of(indices))
-
+	mem.copy(transfer_mem, raw_data(vertices), cast(int)vertex_data_size)
+	mem.copy(transfer_mem[vertex_data_size:], raw_data(indices), cast(int)index_data_size)
 	// unmap the buffer (must be done before unload)
 	sdl.UnmapGPUTransferBuffer(device, transfer_buf)
+	// after unmapping we can safely delete the data
+	delete(vertices)
+	delete(indices)
 
 	// begin a copy pass
 	copy_cmd_buf := sdl.AcquireGPUCommandBuffer(device)
@@ -195,12 +206,12 @@ main :: proc() {
 	// invoke upload command
 	sdl.UploadToGPUBuffer(copy_pass,
 		{transfer_buffer = transfer_buf},
-		{buffer = vertex_buf, size = size_of(vertices)},
+		{buffer = vertex_buf, size = vertex_data_size},
 		false)
 
 	sdl.UploadToGPUBuffer(copy_pass,
-		{transfer_buffer = transfer_buf, offset = size_of(vertices)},
-		{buffer = index_buf, size = size_of(indices)},
+		{transfer_buffer = transfer_buf, offset = vertex_data_size},
+		{buffer = index_buf, size = index_data_size},
 		false)
 
 	sdl.UploadToGPUTexture(copy_pass,
@@ -221,8 +232,7 @@ main :: proc() {
 	// describe vertex attributes
 	vertex_attrs := []sdl.GPUVertexAttribute {
 		{location = 0, format = .FLOAT3, offset = 0}, // position
-		{location = 1, format = .FLOAT4, offset = cast(u32)offset_of(Vertex_Data, colors)}, // colors
-		{location = 2, format = .FLOAT2, offset = cast(u32)offset_of(Vertex_Data, uv)}, // texture coords
+		{location = 1, format = .FLOAT2, offset = cast(u32)offset_of(Vertex_Data, uv)}, // texture coords
 	}
 
 	// create the pipeline
@@ -249,7 +259,6 @@ main :: proc() {
 	})
 	defer sdl.ReleaseGPUGraphicsPipeline(device, pipeline)
 
-
 	proj_mat := glm.mat4Perspective(
 		glm.radians_f32(70),
 		window_get_aspect_ratio(window),
@@ -260,6 +269,7 @@ main :: proc() {
 	timings: Timings
 
 	x_pos := f32(0.0)
+	y_pos := f32(-1.5)
 	angle := f32(0.0)
 	scale := f32(2.0)
 
@@ -270,15 +280,15 @@ main :: proc() {
 		model_mat := glm.mat4(1)
 		time := timing_get_elapsed_seconds()
 
-		trans_speed := f32(1.0)
-		x_pos += glm.cos(time) * trans_speed * timings.delta_time
-		model_mat *= glm.mat4Translate({x_pos, 0, -5})
+		x_trans_speed := f32(0.0)
+		x_pos += glm.cos(time) * x_trans_speed * timings.delta_time
+		model_mat *= glm.mat4Translate({x_pos, y_pos, -5})
 
 		rot_speed := glm.radians_f32(90)
 		angle += rot_speed * timings.delta_time
 		model_mat *= glm.mat4Rotate({0, 1, 0}, angle)
 
-		scaling_amplitude := f32(1.0)
+		scaling_amplitude := f32(0.0)
 		scale += glm.cos(time) * scaling_amplitude * timings.delta_time
 		model_mat *= glm.mat4Scale({scale, scale, 1.0})
 
@@ -316,6 +326,7 @@ main :: proc() {
 				index_buf,
 				texture,
 				sampler,
+				cast(u32)len(indices),
 				&{mvp = model_view_projection})
 
 			// render ui
@@ -338,6 +349,7 @@ render :: proc(
 	index_buffer: ^sdl.GPUBuffer,
 	texture: ^sdl.GPUTexture,
 	sampler: ^sdl.GPUSampler,
+	num_indices: u32,
 	ubo: ^UBO,
 ) {
 	// ------------------ drawing ------------------
@@ -360,7 +372,7 @@ render :: proc(
 	sdl.BindGPUIndexBuffer(render_pass, {buffer = index_buffer}, ._16BIT)
 	sdl.BindGPUFragmentSamplers(render_pass, 0, &sdl.GPUTextureSamplerBinding{texture, sampler}, 1)
 	// draw calls
-	sdl.DrawGPUIndexedPrimitives(render_pass, 6, 1, 0, 0 ,0)
+	sdl.DrawGPUIndexedPrimitives(render_pass, num_indices, 1, 0, 0 ,0)
 	// end drawing
 	sdl.EndGPURenderPass(render_pass)
 }

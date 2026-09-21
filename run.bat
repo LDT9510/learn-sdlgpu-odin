@@ -117,9 +117,9 @@ if %ERRORLEVEL%==0 (
 	cd %output_dir%
 
 	if %attach_debugger%==yes (
-		set misc_dir=%output_dir%/../misc
-		REM if not exist !misc_dir! mkdir !misc_dir!
-		start raddbg %executable% --project:!misc_dir!/project.raddbg
+		set misc_dir=..\misc
+		if not exist !misc_dir! mkdir !misc_dir!
+		start raddbg.exe %executable% --project:!misc_dir!\project.raddbg
 		exit /b 0
 	)
 
