@@ -76,6 +76,44 @@ main :: proc() {
 	devui_init(window, device)
 	defer devui_shutdown(device)
 
+	// ------------------ load images ------------------
+	// load image data
+	img, ok := content_load_image("marble.jpg")
+	assert(ok)
+	defer content_destroy_image(img)
+	// create texture on GPU
+	texture := sdl.CreateGPUTexture(device, {
+		type = .D2,
+		format = .R8G8B8A8_UNORM,
+		usage = {.SAMPLER},
+		width = cast(u32)img.width,
+		height = cast(u32)img.height,
+		layer_count_or_depth = 1,
+		num_levels = 1,
+	})
+	defer sdl.ReleaseGPUTexture(device, texture)
+	// upload pixels to texture
+	tex_transfer_buf := sdl.CreateGPUTransferBuffer(device, {
+		usage = .UPLOAD,
+		size  = cast(u32)len(img.pixels.buf),
+	})
+	tex_transfer_mem := sdl.MapGPUTransferBuffer(device, tex_transfer_buf, false)
+	mem.copy(tex_transfer_mem, raw_data(img.pixels.buf), len(img.pixels.buf))
+	sdl.UnmapGPUTransferBuffer(device, tex_transfer_buf)
+	// upload is done in the copy pass bellow
+	// assign texture coords to vertices (vertex attribute below)
+	// create shader sampler
+	sampler := sdl.CreateGPUSampler(device, {
+		min_filter = .NEAREST,
+		mag_filter = .NEAREST,
+		address_mode_u = .REPEAT,
+		address_mode_v = .REPEAT,
+		address_mode_w = .REPEAT,
+	})
+	defer sdl.ReleaseGPUSampler(device, sampler)
+
+	// ------------------ load shaders ------------------
+
 	vertex_shader := sdl.CreateGPUShader(device, {
 		code_size 			= len(g_vertex),
 		code                = raw_data(g_vertex),
@@ -95,29 +133,25 @@ main :: proc() {
 		format              = {.SPIRV},
 		stage               = .FRAGMENT,
 		num_uniform_buffers = UNIFORM_BUFFERS,
+		num_samplers        = 1,
 	})
 	defer sdl.ReleaseGPUShader(device, fragment_shader)
 
-	proj_mat := glm.mat4Perspective(
-		glm.radians_f32(70),
-		window_get_aspect_ratio(window),
-		0.0001,
-		1000.0,
-	)
 
 	// ------------------ create vertex data ------------------
 
 	Vertex_Data :: struct {
 		positions: glm.vec3,
 		colors:    glm.vec4,
+		uv:        glm.vec2,
 	}
 
 	// create vertex data
 	vertices := [?]Vertex_Data {
-		{{-0.5,  0.5, 0}, {1.0, 0.0, 0.0, 0}},
-		{{ 0.5,  0.5, 0}, {1.0, 1.0, 0.0, 0}},
-		{{-0.5, -0.5, 0}, {0.0, 0.0, 1.0, 0}},
-		{{ 0.5, -0.5, 0}, {0.0, 0.0, 1.0, 0}},
+		{{-0.5,  0.5, 0}, {1.0, 0.0, 0.0, 0}, {0, 0}},
+		{{ 0.5,  0.5, 0}, {1.0, 1.0, 0.0, 0}, {1, 0}},
+		{{-0.5, -0.5, 0}, {0.0, 0.0, 1.0, 0}, {0, 1}},
+		{{ 0.5, -0.5, 0}, {0.0, 0.0, 1.0, 0}, {1, 1}},
 	}
 	// create vertex buffers
 	vertex_buf := sdl.CreateGPUBuffer(device, {
@@ -169,12 +203,18 @@ main :: proc() {
 		{buffer = index_buf, size = size_of(indices)},
 		false)
 
+	sdl.UploadToGPUTexture(copy_pass,
+		{transfer_buffer = tex_transfer_buf},
+		{texture = texture, w = cast(u32)img.width, h = cast(u32)img.height, d = 1},
+		false)
+
 	// end copy pass and submit
 	sdl.EndGPUCopyPass(copy_pass)
 	sdl_assert(sdl.SubmitGPUCommandBuffer(copy_cmd_buf))
 
 	// after submit is safe to release the transfer buffer
 	sdl.ReleaseGPUTransferBuffer(device, transfer_buf)
+	sdl.ReleaseGPUTransferBuffer(device, tex_transfer_buf)
 
 	// ------------------ describe vertex data and create the pipeline ------------------
 
@@ -182,6 +222,7 @@ main :: proc() {
 	vertex_attrs := []sdl.GPUVertexAttribute {
 		{location = 0, format = .FLOAT3, offset = 0}, // position
 		{location = 1, format = .FLOAT4, offset = cast(u32)offset_of(Vertex_Data, colors)}, // colors
+		{location = 2, format = .FLOAT2, offset = cast(u32)offset_of(Vertex_Data, uv)}, // texture coords
 	}
 
 	// create the pipeline
@@ -207,6 +248,14 @@ main :: proc() {
 		},
 	})
 	defer sdl.ReleaseGPUGraphicsPipeline(device, pipeline)
+
+
+	proj_mat := glm.mat4Perspective(
+		glm.radians_f32(70),
+		window_get_aspect_ratio(window),
+		0.0001,
+		1000.0,
+	)
 
 	timings: Timings
 
@@ -259,7 +308,15 @@ main :: proc() {
 
 		if swapchain_tex != nil {
 			// render application
-			render(swapchain_tex, cmd_buf, pipeline, vertex_buf, index_buf, &{mvp = model_view_projection})
+			render(
+				swapchain_tex,
+				cmd_buf,
+				pipeline,
+				vertex_buf,
+				index_buf,
+				texture,
+				sampler,
+				&{mvp = model_view_projection})
 
 			// render ui
 			devui_begin_frame()
@@ -279,6 +336,8 @@ render :: proc(
 	pipeline: ^sdl.GPUGraphicsPipeline,
 	vertex_buffer: ^sdl.GPUBuffer,
 	index_buffer: ^sdl.GPUBuffer,
+	texture: ^sdl.GPUTexture,
+	sampler: ^sdl.GPUSampler,
 	ubo: ^UBO,
 ) {
 	// ------------------ drawing ------------------
@@ -296,9 +355,10 @@ render :: proc(
 	sdl.BindGPUGraphicsPipeline(render_pass, pipeline)
 	// bind uniforms
 	sdl.PushGPUVertexUniformData(cmd_buf, 0, ubo, size_of(UBO))
-	// bind vertex and index data
+	// bind vertex and index data, and samplers
 	sdl.BindGPUVertexBuffers(render_pass, 0, &sdl.GPUBufferBinding{buffer = vertex_buffer}, 1)
 	sdl.BindGPUIndexBuffer(render_pass, {buffer = index_buffer}, ._16BIT)
+	sdl.BindGPUFragmentSamplers(render_pass, 0, &sdl.GPUTextureSamplerBinding{texture, sampler}, 1)
 	// draw calls
 	sdl.DrawGPUIndexedPrimitives(render_pass, 6, 1, 0, 0 ,0)
 	// end drawing

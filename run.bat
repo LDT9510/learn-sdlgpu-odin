@@ -29,13 +29,15 @@ set opt_flags=^
 	-linker:radlink^
 	-microarch:native
 
-set defines_flags=
+set defines_flags=^
+	-define:CONTENT_ROOT=../
 
 set is_command_known=no
 set build_all=no
 set is_debug=no
 set attach_debugger=no
 set run_renderdoc=no
+set just_compile_shaders=no
 
 if %command%=="" (
 	set is_command_known=yes
@@ -80,7 +82,7 @@ if %command%=="release" (
 )
 if %command%=="shader" (
 	set is_command_known=yes
-
+	set just_compile_shaders=yes
 )
 
 if %is_command_known%==no (
@@ -106,6 +108,7 @@ echo Vertex OK
 glslc src/shader.frag -g -o src/shader.frag.spv
 if %ERRORLEVEL% neq 0 exit /b 1
 echo Fragment OK
+if %just_compile_shaders%==yes exit /b 0
 
 echo Running: %final_build_command%
 %final_build_command%
