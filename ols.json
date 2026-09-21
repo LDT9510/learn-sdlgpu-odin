@@ -1,13 +1,20 @@
 {
     "$schema": "https://raw.githubusercontent.com/DanielGavin/ols/master/misc/ols.schema.json",
     "collections": [
-        { "name": "extern", "path": "extern"},
-        { "name": "main", "path": "src"}
+        {
+            "name": "extern",
+            "path": "extern"
+        },
+        {
+            "name": "main",
+            "path": "src"
+        }
     ],
     "enable_fake_methods": true,
     "enable_inlay_hints_params": true,
     "enable_inlay_hints_default_params": true,
     "enable_inlay_hints_implicit_return": true,
     "enable_overload_resolution": true,
-    "enable_semantic_tokens": true
+    "enable_semantic_tokens": true,
+    "enable_format": false
 }

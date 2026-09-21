@@ -10,15 +10,13 @@ devui_init :: proc(window: ^sdl.Window, device: ^sdl.GPUDevice) {
 	im.CHECKVERSION()
 	im.CreateContext()
 	im_sdl.InitForSDLGPU(window)
-	im_sdlgpu.Init(
-		&{
-			Device = device,
-			ColorTargetFormat = sdl.GetGPUSwapchainTextureFormat(device, window),
-			MSAASamples = ._1,
+	im_sdlgpu.Init(&{
+			Device               = device,
+			ColorTargetFormat    = sdl.GetGPUSwapchainTextureFormat(device, window),
+			MSAASamples          = ._1,
 			SwapchainComposition = .SDR,
-			PresentMode = .VSYNC,
-		},
-	)
+			PresentMode          = .VSYNC,
+		})
 
 	io := im.GetIO()
 	io.ConfigFlags += {.DockingEnable}
@@ -48,7 +46,7 @@ devui_render_frame :: proc(target_texture: ^sdl.GPUTexture, cmd_buf: ^sdl.GPUCom
 	im_sdlgpu.PrepareDrawData(draw_data, cmd_buf)
 
 	info := sdl.GPUColorTargetInfo {
-		texture     = target_texture,
+		texture = target_texture,
 	}
 	render_pass := sdl.BeginGPURenderPass(cmd_buf, &info, 1, nil)
 	im_sdlgpu.RenderDrawData(draw_data, cmd_buf, render_pass)

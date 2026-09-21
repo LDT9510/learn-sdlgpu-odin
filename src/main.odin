@@ -76,32 +76,26 @@ main :: proc() {
 	devui_init(window, device)
 	defer devui_shutdown(device)
 
-	vertex_shader := sdl.CreateGPUShader(
-		device,
-		{
-			code_size = len(g_vertex),
-			code = raw_data(g_vertex),
-			entrypoint = "main",
-			format = {.SPIRV},
-			stage = .VERTEX,
-			num_uniform_buffers = UNIFORM_BUFFERS,
-		},
-	)
+	vertex_shader := sdl.CreateGPUShader(device, {
+		code_size 			= len(g_vertex),
+		code                = raw_data(g_vertex),
+		entrypoint          = "main",
+		format              = {.SPIRV},
+		stage               = .VERTEX,
+		num_uniform_buffers = UNIFORM_BUFFERS,
+	})
 	defer sdl.ReleaseGPUShader(device, vertex_shader)
 
 	UNIFORM_BUFFERS :: 1
 
-	fragment_shader := sdl.CreateGPUShader(
-		device,
-		{
-			code_size = len(g_fragment),
-			code = raw_data(g_fragment),
-			entrypoint = "main",
-			format = {.SPIRV},
-			stage = .FRAGMENT,
-			num_uniform_buffers = UNIFORM_BUFFERS,
-		},
-	)
+	fragment_shader := sdl.CreateGPUShader(device, {
+		code_size           = len(g_fragment),
+		code                = raw_data(g_fragment),
+		entrypoint          = "main",
+		format              = {.SPIRV},
+		stage               = .FRAGMENT,
+		num_uniform_buffers = UNIFORM_BUFFERS,
+	})
 	defer sdl.ReleaseGPUShader(device, fragment_shader)
 
 	proj_mat := glm.mat4Perspective(
@@ -111,21 +105,89 @@ main :: proc() {
 		1000.0,
 	)
 
+	// ------------------ create vertex data ------------------
+
+	Vertex_Data :: struct {
+		positions: glm.vec3,
+		colors:    glm.vec4,
+	}
+
+	// create vertex data
+	vertices := [?]Vertex_Data {
+		{{-0.5, -0.5, 0}, {1.0, 0.0, 0.0, 0}},
+		{{   0,  0.5, 0}, {1.0, 1.0, 0.0, 0}},
+		{{ 0.5, -0.5, 0}, {0.0, 0.0, 1.0, 0}},
+	}
+
+	// create vertex buffers
+	vertex_buf := sdl.CreateGPUBuffer(device, {
+		usage = {.VERTEX},
+		size  = size_of(vertices),
+	})
+	defer sdl.ReleaseGPUBuffer(device, vertex_buf)
+
+	// ------------------ upload vertex data to the buffer ------------------
+
+	// create a transfer buffer (GPU memory mapped to CPU memory)
+	transfer_buf := sdl.CreateGPUTransferBuffer(device, {
+		usage = .UPLOAD,
+		size  = size_of(vertices),
+	})
+
+	// map the buffer to the GPU memory and copy
+	transfer_mem := sdl.MapGPUTransferBuffer(device, transfer_buf, false)
+	mem.copy(transfer_mem, &vertices, size_of(vertices))
+
+	// unmap the buffer (must be done before unload)
+	sdl.UnmapGPUTransferBuffer(device, transfer_buf)
+
+	// begin a copy pass
+	copy_cmd_buf := sdl.AcquireGPUCommandBuffer(device)
+	copy_pass := sdl.BeginGPUCopyPass(copy_cmd_buf)
+
+	// invoke upload command
+	sdl.UploadToGPUBuffer(copy_pass,
+		{transfer_buffer = transfer_buf},
+		{buffer = vertex_buf, size = size_of(vertices)},
+		false)
+
+	// end copy pass and submit
+	sdl.EndGPUCopyPass(copy_pass)
+	sdl_assert(sdl.SubmitGPUCommandBuffer(copy_cmd_buf))
+
+	// after submit is safe to release the transfer buffer
+	sdl.ReleaseGPUTransferBuffer(device, transfer_buf)
+
+	// ------------------ describe vertex data and create the pipeline ------------------
+
+	// describe vertex attributes
+	vertex_attrs := []sdl.GPUVertexAttribute {
+		{location = 0, format = .FLOAT3, offset = 0}, // position
+		{location = 1, format = .FLOAT4, offset = cast(u32)offset_of(Vertex_Data, colors)}, // colors
+	}
+
 	// create the pipeline
-	pipeline := sdl.CreateGPUGraphicsPipeline(
-		device,
-		{
-			vertex_shader = vertex_shader,
-			fragment_shader = fragment_shader,
-			primitive_type = .TRIANGLELIST,
-			target_info = {
-				num_color_targets = 1,
-				color_target_descriptions = &sdl.GPUColorTargetDescription {
-					format = sdl.GetGPUSwapchainTextureFormat(device, window),
-				},
+	pipeline := sdl.CreateGPUGraphicsPipeline(device,
+	{
+		vertex_shader = vertex_shader,
+		fragment_shader = fragment_shader,
+		primitive_type = .TRIANGLELIST,
+		vertex_input_state = {
+			num_vertex_buffers         = 1,
+			vertex_buffer_descriptions = &sdl.GPUVertexBufferDescription {
+				slot  = 0,
+				pitch = size_of(Vertex_Data), // this is the stride
+			},
+			num_vertex_attributes = cast(u32)len(vertex_attrs),
+			vertex_attributes     = raw_data(vertex_attrs),
+		},
+		target_info = {
+			num_color_targets         = 1,
+			color_target_descriptions = &sdl.GPUColorTargetDescription {
+				format = sdl.GetGPUSwapchainTextureFormat(device, window),
 			},
 		},
-	)
+	})
 	defer sdl.ReleaseGPUGraphicsPipeline(device, pipeline)
 
 	timings: Timings
@@ -179,7 +241,7 @@ main :: proc() {
 
 		if swapchain_tex != nil {
 			// render application
-			render(swapchain_tex, cmd_buf, pipeline, &{mvp = model_view_projection})
+			render(swapchain_tex, cmd_buf, pipeline, vertex_buf, &{mvp = model_view_projection})
 
 			// render ui
 			devui_begin_frame()
@@ -197,9 +259,12 @@ render :: proc(
 	target_texture: ^sdl.GPUTexture,
 	cmd_buf: ^sdl.GPUCommandBuffer,
 	pipeline: ^sdl.GPUGraphicsPipeline,
+	vertex_buffer: ^sdl.GPUBuffer,
 	ubo: ^UBO,
 ) {
-	// drawing
+	// ------------------ drawing ------------------
+
+	// describe the color target
 	color_target := sdl.GPUColorTargetInfo {
 		texture     = target_texture,
 		load_op     = .CLEAR,
@@ -208,15 +273,15 @@ render :: proc(
 	}
 	// render pass
 	render_pass := sdl.BeginGPURenderPass(cmd_buf, &color_target, 1, nil)
-
 	// bind pipeline
 	sdl.BindGPUGraphicsPipeline(render_pass, pipeline)
-	// bind vertex data
 	// bind uniforms
 	sdl.PushGPUVertexUniformData(cmd_buf, 0, ubo, size_of(UBO))
+	// bind vertex data
+	sdl.BindGPUVertexBuffers(render_pass, 0, &sdl.GPUBufferBinding{buffer = vertex_buffer}, 1)
 	// draw calls
 	sdl.DrawGPUPrimitives(render_pass, 3, 1, 0, 0)
-
+	// end drawing
 	sdl.EndGPURenderPass(render_pass)
 }
 
