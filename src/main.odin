@@ -114,11 +114,11 @@ main :: proc() {
 
 	// create vertex data
 	vertices := [?]Vertex_Data {
-		{{-0.5, -0.5, 0}, {1.0, 0.0, 0.0, 0}},
-		{{   0,  0.5, 0}, {1.0, 1.0, 0.0, 0}},
+		{{-0.5,  0.5, 0}, {1.0, 0.0, 0.0, 0}},
+		{{ 0.5,  0.5, 0}, {1.0, 1.0, 0.0, 0}},
+		{{-0.5, -0.5, 0}, {0.0, 0.0, 1.0, 0}},
 		{{ 0.5, -0.5, 0}, {0.0, 0.0, 1.0, 0}},
 	}
-
 	// create vertex buffers
 	vertex_buf := sdl.CreateGPUBuffer(device, {
 		usage = {.VERTEX},
@@ -126,17 +126,30 @@ main :: proc() {
 	})
 	defer sdl.ReleaseGPUBuffer(device, vertex_buf)
 
+	// create index data
+	indices := [?]u16 {
+		0, 1, 2,
+		2, 1, 3,
+	}
+	// create index buffers
+	index_buf := sdl.CreateGPUBuffer(device, {
+		usage = {.INDEX},
+		size  = size_of(indices),
+	})
+	defer sdl.ReleaseGPUBuffer(device, index_buf)
+
 	// ------------------ upload vertex data to the buffer ------------------
 
 	// create a transfer buffer (GPU memory mapped to CPU memory)
 	transfer_buf := sdl.CreateGPUTransferBuffer(device, {
 		usage = .UPLOAD,
-		size  = size_of(vertices),
+		size  = size_of(vertices) + size_of(indices),
 	})
 
 	// map the buffer to the GPU memory and copy
-	transfer_mem := sdl.MapGPUTransferBuffer(device, transfer_buf, false)
+	transfer_mem := cast([^]byte)sdl.MapGPUTransferBuffer(device, transfer_buf, false)
 	mem.copy(transfer_mem, &vertices, size_of(vertices))
+	mem.copy(transfer_mem[size_of(vertices):], &indices, size_of(indices))
 
 	// unmap the buffer (must be done before unload)
 	sdl.UnmapGPUTransferBuffer(device, transfer_buf)
@@ -149,6 +162,11 @@ main :: proc() {
 	sdl.UploadToGPUBuffer(copy_pass,
 		{transfer_buffer = transfer_buf},
 		{buffer = vertex_buf, size = size_of(vertices)},
+		false)
+
+	sdl.UploadToGPUBuffer(copy_pass,
+		{transfer_buffer = transfer_buf, offset = size_of(vertices)},
+		{buffer = index_buf, size = size_of(indices)},
 		false)
 
 	// end copy pass and submit
@@ -241,7 +259,7 @@ main :: proc() {
 
 		if swapchain_tex != nil {
 			// render application
-			render(swapchain_tex, cmd_buf, pipeline, vertex_buf, &{mvp = model_view_projection})
+			render(swapchain_tex, cmd_buf, pipeline, vertex_buf, index_buf, &{mvp = model_view_projection})
 
 			// render ui
 			devui_begin_frame()
@@ -260,6 +278,7 @@ render :: proc(
 	cmd_buf: ^sdl.GPUCommandBuffer,
 	pipeline: ^sdl.GPUGraphicsPipeline,
 	vertex_buffer: ^sdl.GPUBuffer,
+	index_buffer: ^sdl.GPUBuffer,
 	ubo: ^UBO,
 ) {
 	// ------------------ drawing ------------------
@@ -277,10 +296,11 @@ render :: proc(
 	sdl.BindGPUGraphicsPipeline(render_pass, pipeline)
 	// bind uniforms
 	sdl.PushGPUVertexUniformData(cmd_buf, 0, ubo, size_of(UBO))
-	// bind vertex data
+	// bind vertex and index data
 	sdl.BindGPUVertexBuffers(render_pass, 0, &sdl.GPUBufferBinding{buffer = vertex_buffer}, 1)
+	sdl.BindGPUIndexBuffer(render_pass, {buffer = index_buffer}, ._16BIT)
 	// draw calls
-	sdl.DrawGPUPrimitives(render_pass, 3, 1, 0, 0)
+	sdl.DrawGPUIndexedPrimitives(render_pass, 6, 1, 0, 0 ,0)
 	// end drawing
 	sdl.EndGPURenderPass(render_pass)
 }
