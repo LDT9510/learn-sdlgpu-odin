@@ -41,9 +41,11 @@ Vertex_Data :: struct {
 }
 
 g_should_close := false
+g_is_capturing_mouse := false
 g_vertex := #load("shader.vert.spv")
 g_fragment := #load("shader.frag.spv")
 g_vsync := UI_bool{"VSYNC", true, false}
+g_camera := camera_create({0, 1, -3})
 
 main :: proc() {
 	context = context_setup()
@@ -77,31 +79,34 @@ main :: proc() {
 	// send to GPU
 	upload_to_gpu(device, model)
 
-	proj_mat := glm.mat4Perspective(
-		glm.radians_f32(70),
-		window_get_aspect_ratio(window),
-		0.0001,
-		1000.0,
-	)
 
 	timings: Timings
 
 	x_pos := f32(0.0)
-	y_pos := f32(-1.5)
+	y_pos := f32(0.0)
+	z_pos := f32(0.0)
 	angle := f32(0.0)
-	scale := f32(2.0)
+	scale := f32(1.0)
 
 	for !g_should_close {
 		// ------------------ update ------------------
-		events_handle(process_key_input, process_events)
 		timing_update(&timings)
+		events_handle(process_key_input, process_events, window)
+		camera_handle_input(&g_camera, timings.delta_time)
+
+		proj_mat := glm.mat4Perspective(
+			glm.radians_f32(g_camera.zoom),
+			window_get_aspect_ratio(window),
+			g_camera.frustrum_near,
+			g_camera.frustrum_far,
+		)
 
 		model_mat := glm.mat4(1)
 		time := timing_get_elapsed_seconds()
 
 		x_trans_speed := f32(0.0)
 		x_pos += glm.cos(time) * x_trans_speed * timings.delta_time
-		model_mat *= glm.mat4Translate({x_pos, y_pos, -6})
+		model_mat *= glm.mat4Translate({x_pos, y_pos, z_pos})
 
 		rot_speed := glm.radians_f32(90)
 		angle += rot_speed * timings.delta_time
@@ -111,7 +116,7 @@ main :: proc() {
 		scale += glm.cos(time) * scaling_amplitude * timings.delta_time
 		model_mat *= glm.mat4Scale(scale)
 
-		model_view_projection := proj_mat * model_mat
+		model_view_projection := proj_mat * camera_get_view_matrix(g_camera) * model_mat
 
 		// ------------------ rendering ------------------
 
@@ -210,6 +215,8 @@ main_ui_window :: proc(t: Timings, w: ^sdl.Window, d: ^sdl.GPUDevice) {
 		im.Text("Frame time: %.2f ms", t.frame_time_ms)
 	}
 
+	camera_dev_ui_frame(&g_camera)
+
 	defer im.End()
 }
 
@@ -220,44 +227,20 @@ process_key_input :: proc() {
 	}
 }
 
-process_events :: proc(event: sdl.Event) {
+process_events :: proc(event: sdl.Event, window: ^sdl.Window) {
+	g_is_capturing_mouse = events_is_mouse_button_pressed({.RIGHT})
+	_ = sdl.SetWindowRelativeMouseMode(window, g_is_capturing_mouse)
+
 	#partial switch event.type {
 	case .QUIT:
 		toggle(&g_should_close)
+	case .MOUSE_WHEEL:
+		camera_on_mouse_wheel_scroll(&g_camera, event.wheel.y, g_is_capturing_mouse)
+	case .MOUSE_MOTION:
+		if g_is_capturing_mouse {
+			camera_on_mouse_move(&g_camera, event.motion.xrel, -event.motion.yrel)
+		}
 	}
-}
-
-upload_to_gpu :: proc(
-	device: ^sdl.GPUDevice,
-	model: Model,
-) {
-	// begin a copy pass
-	copy_cmd_buf := sdl.AcquireGPUCommandBuffer(device)
-	copy_pass := sdl.BeginGPUCopyPass(copy_cmd_buf)
-
-	// invoke upload command
-	sdl.UploadToGPUBuffer(copy_pass,
-		{transfer_buffer = model.transfer_buf},
-		{buffer = model.vertex_buf, size = model.vertex_size},
-		false)
-
-	sdl.UploadToGPUBuffer(copy_pass,
-		{transfer_buffer = model.transfer_buf, offset = model.vertex_size},
-		{buffer = model.index_buf, size = model.index_size},
-		false)
-
-	sdl.UploadToGPUTexture(copy_pass,
-		{transfer_buffer = model.texture.transfer_buf},
-		{texture = model.texture.handle, w = model.texture.x, h = model.texture.y, d = 1},
-		false)
-
-	// end copy pass and submit
-	sdl.EndGPUCopyPass(copy_pass)
-	sdl_assert(sdl.SubmitGPUCommandBuffer(copy_cmd_buf))
-
-	// after submit is safe to release the transfer buffers
-	sdl.ReleaseGPUTransferBuffer(device, model.transfer_buf)
-	sdl.ReleaseGPUTransferBuffer(device, model.texture.transfer_buf)
 }
 
 create_pipeline :: proc(
@@ -280,9 +263,17 @@ create_pipeline :: proc(
 	// create the pipeline
 	pipeline := sdl.CreateGPUGraphicsPipeline(device,
 	{
+		primitive_type = .TRIANGLELIST,
 		vertex_shader = vertex_shader,
 		fragment_shader = fragment_shader,
-		primitive_type = .TRIANGLELIST,
+		target_info = {
+			num_color_targets         = 1,
+			color_target_descriptions = &sdl.GPUColorTargetDescription {
+				format = sdl.GetGPUSwapchainTextureFormat(device, window),
+			},
+			has_depth_stencil_target = true,
+			depth_stencil_format = .D24_UNORM,
+		},
 		vertex_input_state = {
 			num_vertex_buffers         = 1,
 			vertex_buffer_descriptions = &sdl.GPUVertexBufferDescription {
@@ -297,13 +288,8 @@ create_pipeline :: proc(
 			enable_depth_write = true,
 			compare_op = .LESS,
 		},
-		target_info = {
-			num_color_targets         = 1,
-			color_target_descriptions = &sdl.GPUColorTargetDescription {
-				format = sdl.GetGPUSwapchainTextureFormat(device, window),
-			},
-			has_depth_stencil_target = true,
-			depth_stencil_format = .D24_UNORM,
+		rasterizer_state = {
+			cull_mode = .BACK,
 		},
 	})
 
@@ -480,3 +466,35 @@ create_depth_stencil_texture :: proc(
 	return depth_stencil_texture
 }
 
+upload_to_gpu :: proc(
+	device: ^sdl.GPUDevice,
+	model: Model,
+) {
+	// begin a copy pass
+	copy_cmd_buf := sdl.AcquireGPUCommandBuffer(device)
+	copy_pass := sdl.BeginGPUCopyPass(copy_cmd_buf)
+
+	// invoke upload command
+	sdl.UploadToGPUBuffer(copy_pass,
+		{transfer_buffer = model.transfer_buf},
+		{buffer = model.vertex_buf, size = model.vertex_size},
+		false)
+
+	sdl.UploadToGPUBuffer(copy_pass,
+		{transfer_buffer = model.transfer_buf, offset = model.vertex_size},
+		{buffer = model.index_buf, size = model.index_size},
+		false)
+
+	sdl.UploadToGPUTexture(copy_pass,
+		{transfer_buffer = model.texture.transfer_buf},
+		{texture = model.texture.handle, w = model.texture.x, h = model.texture.y, d = 1},
+		false)
+
+	// end copy pass and submit
+	sdl.EndGPUCopyPass(copy_pass)
+	sdl_assert(sdl.SubmitGPUCommandBuffer(copy_cmd_buf))
+
+	// after submit is safe to release the transfer buffers
+	sdl.ReleaseGPUTransferBuffer(device, model.transfer_buf)
+	sdl.ReleaseGPUTransferBuffer(device, model.texture.transfer_buf)
+}
