@@ -78,7 +78,7 @@ main :: proc() {
 
 	// ------------------ load images ------------------
 	// load image data
-	img, ok := content_load_image("marble.jpg")
+	img, ok := content_load_image("colormap.png")
 	assert(ok)
 	defer content_destroy_image(img)
 	// create texture on GPU
@@ -166,6 +166,7 @@ main :: proc() {
 
 	vertex_data_size := u32(len(vertices) * size_of(vertices[0]))
 	index_data_size := u32(len(indices) * size_of(indices[0]))
+	index_count := u32(len(indices))
 
 	// create vertex buffers
 	vertex_buf := sdl.CreateGPUBuffer(device, {
@@ -282,7 +283,7 @@ main :: proc() {
 
 		x_trans_speed := f32(0.0)
 		x_pos += glm.cos(time) * x_trans_speed * timings.delta_time
-		model_mat *= glm.mat4Translate({x_pos, y_pos, -5})
+		model_mat *= glm.mat4Translate({x_pos, y_pos, -6})
 
 		rot_speed := glm.radians_f32(90)
 		angle += rot_speed * timings.delta_time
@@ -290,7 +291,7 @@ main :: proc() {
 
 		scaling_amplitude := f32(0.0)
 		scale += glm.cos(time) * scaling_amplitude * timings.delta_time
-		model_mat *= glm.mat4Scale({scale, scale, 1.0})
+		model_mat *= glm.mat4Scale(scale)
 
 		model_view_projection := proj_mat * model_mat
 
@@ -326,7 +327,7 @@ main :: proc() {
 				index_buf,
 				texture,
 				sampler,
-				cast(u32)len(indices),
+				index_count,
 				&{mvp = model_view_projection})
 
 			// render ui
