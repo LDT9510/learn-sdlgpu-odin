@@ -42,8 +42,6 @@ Vertex_Data :: struct {
 
 g_should_close := false
 g_is_capturing_mouse := false
-g_vertex := #load("shader.vert.spv")
-g_fragment := #load("shader.frag.spv")
 g_vsync := UI_bool{"VSYNC", true, false}
 g_camera := camera_create({0, 1, -3})
 
@@ -185,6 +183,7 @@ render :: proc(rd: Render_Data) {
 		texture = rd.depth_texture,
 		load_op = .CLEAR,
 		clear_depth = 1.0,
+		clear_stencil = 0,
 		store_op = .DONT_CARE,
 	}
 	// render pass
@@ -205,6 +204,9 @@ render :: proc(rd: Render_Data) {
 
 main_ui_window :: proc(t: Timings, w: ^sdl.Window, d: ^sdl.GPUDevice) {
 	im.Begin("Learning SDL_GPU")
+
+	im.Text("Current API: %s", SELECTED_GRAPHICS_API)
+	im.Separator()
 
 	g_vsync.toggled = im.RadioButtonIntPtr("VSYNC", cast(^i32)&g_vsync.value, 1)
 	im.SameLine()
@@ -248,10 +250,10 @@ create_pipeline :: proc(
 	window: ^sdl.Window,
 ) -> ^sdl.GPUGraphicsPipeline {
 	// load shaders
-	vertex_shader := create_shader(device, .VERTEX, g_vertex, 0)
+	vertex_shader := create_shader(device, "shader.vert", 0)
 	defer sdl.ReleaseGPUShader(device, vertex_shader)
 
-	fragment_shader := create_shader(device, .FRAGMENT, g_fragment, 1)
+	fragment_shader := create_shader(device, "shader.frag", 1)
 	defer sdl.ReleaseGPUShader(device, fragment_shader)
 
 	// describe vertex attributes
@@ -272,7 +274,7 @@ create_pipeline :: proc(
 				format = sdl.GetGPUSwapchainTextureFormat(device, window),
 			},
 			has_depth_stencil_target = true,
-			depth_stencil_format = .D24_UNORM,
+			depth_stencil_format = .D16_UNORM,
 		},
 		vertex_input_state = {
 			num_vertex_buffers         = 1,
@@ -298,16 +300,34 @@ create_pipeline :: proc(
 
 create_shader :: proc(
 	device: ^sdl.GPUDevice,
-	stage: sdl.GPUShaderStage,
-	code: []byte,
+	shader_file: string,
 	num_samplers: u32,
 ) -> ^sdl.GPUShader {
+	shader, ok := content_load_shader(shader_file)
+	assert(ok)
+	defer content_destroy_shader(shader)
+
+	format: sdl.GPUShaderFormat
+	entrypoint: cstring
+	switch CURRENT_GRAPHICS_API {
+	case .Vulkan:
+		format = {.SPIRV}
+		entrypoint = "main"
+	case .DirectX12:
+		format = {.DXIL}
+		entrypoint = "main"
+	case .Metal:
+		format = {.MSL}
+		// "main" is a reserved keyword in MSL, shadercross will create this entrypoint
+		entrypoint = "main0"
+	}
+
 	return sdl.CreateGPUShader(device, {
-		code_size 			= len(code),
-		code                = raw_data(code),
-		entrypoint          = "main",
-		format              = {.SPIRV},
-		stage               = stage,
+		code_size 			= len(shader.code),
+		code                = raw_data(shader.code),
+		entrypoint          = entrypoint,
+		format              = format,
+		stage               = shader.stage,
 		num_uniform_buffers = NUM_UNIFORM_BUFFERS,
 		num_samplers        = num_samplers,
 	})
@@ -451,16 +471,23 @@ create_depth_stencil_texture :: proc(
 	device: ^sdl.GPUDevice,
 	window: ^sdl.Window,
 ) -> ^sdl.GPUTexture {
+	props := sdl.CreateProperties()
+	sdl.SetFloatProperty(props, sdl.PROP_GPU_TEXTURE_CREATE_D3D12_CLEAR_DEPTH_FLOAT, 1.0)
+	sdl.SetNumberProperty(props, sdl.PROP_GPU_TEXTURE_CREATE_D3D12_CLEAR_STENCIL_NUMBER, 0)
+	defer sdl.DestroyProperties(props)
+
 	win_w, win_h : i32
 	sdl.GetWindowSize(window, &win_w, &win_h)
 	depth_stencil_texture := sdl.CreateGPUTexture(device, {
 		type = .D2,
-		format = .D24_UNORM,
+		// universally supported format, check for others if required
+		format = .D16_UNORM,
 		usage = {.DEPTH_STENCIL_TARGET},
 		width = cast(u32)win_w,
 		height = cast(u32)win_h,
 		layer_count_or_depth = 1,
 		num_levels = 1,
+		props = props,
 	})
 
 	return depth_stencil_texture

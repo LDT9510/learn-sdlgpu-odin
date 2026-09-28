@@ -36,7 +36,7 @@ CAMERA_DEFAULT :: Camera {
 	sensitivity    = 0.1,
 	zoom           = 70.0,
 	zoom_speed     = 1.0,
-	frustrum_near  = 0.005,
+	frustrum_near  = 0.05,
 	frustrum_far   = 1000.0,
 	fly            = true,
 }

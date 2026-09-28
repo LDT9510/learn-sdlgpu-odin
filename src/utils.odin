@@ -15,18 +15,18 @@ sdl_assert :: proc {
 	sdl_assert_bool,
 }
 
-sdl_assert_ptr :: proc(ptr: rawptr, msg := "Error") {
+sdl_assert_ptr :: proc(ptr: rawptr, msg := "Error", loc := #caller_location) {
 	when !ODIN_DISABLE_ASSERT {
 		if ptr == nil {
-			log.panicf("[SDL] %s: %s", msg, sdl.GetError())
+			log.panicf("[SDL] %s: %s", msg, sdl.GetError(), location = loc)
 		}
 	}
 }
 
-sdl_assert_bool :: proc(value: bool, msg := "Error") {
+sdl_assert_bool :: proc(value: bool, msg := "Error", loc := #caller_location) {
 	when !ODIN_DISABLE_ASSERT {
 		if !value {
-			log.panicf("[SDL] %s: %s", msg, sdl.GetError())
+			log.panicf("[SDL] %s: %s", msg, sdl.GetError(), location = loc)
 		}
 	}
 }

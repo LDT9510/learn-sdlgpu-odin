@@ -3,4 +3,5 @@
 *.exe
 *.cap
 **/.bin
-src/.generated/**
+.out/**
+content/shaders_out_debug/**
