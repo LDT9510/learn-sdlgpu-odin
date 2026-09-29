@@ -276,8 +276,11 @@ compile_shaders :: proc(options: []string, debug: bool) {
 		basename := filepath.stem(file.name)
 		output_name := strings.concatenate({basename, ".", format})
 		shader_out := make_path({inner_out_dir, output_name})
+		reflect_output_name := strings.concatenate({basename, ".", "json"})
+		reflect_out := make_path({inner_out_dir, reflect_output_name})
 
 		run({sc, shader_in, "-o", shader_out, flags})
+		run({sc, shader_in, "-o", reflect_out, flags})
 	}
 
 	log.infof("%d shaders compiled.", count)

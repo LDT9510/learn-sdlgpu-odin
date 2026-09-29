@@ -6,6 +6,7 @@ import "core:image"
 import "core:strings"
 import "core:log"
 import "core:os"
+import "core:encoding/json"
 import "core:path/filepath"
 import sdl "vendor:sdl3"
 
@@ -22,6 +23,13 @@ Content_Shader :: struct {
 	code: []byte,
 	stage: sdl.GPUShaderStage,
 }
+Content_Shader_Reflect :: struct {
+	samplers: u32,
+	storage_textures: u32,
+	storage_buffers: u32,
+	uniform_buffers: u32,
+}
+
 
 content_load_image :: proc(image_name: string) -> (image_data: ^image.Image, ok: bool) {
 	image_path, fp_err := filepath.join({CONTENT_IMAGE_PATH, image_name})
@@ -95,6 +103,20 @@ content_load_shader :: proc(shader_file: string) -> (shader: Content_Shader, ok:
 
 content_destroy_shader :: proc(shader: Content_Shader) {
 	delete(shader.code)
+}
+
+content_load_shader_reflect :: proc(shader_file: string) -> (res: Content_Shader_Reflect) {
+	format := SHADER_OUT_FORMATS[CURRENT_GRAPHICS_API]
+	json_filename := strings.concatenate(
+		{CONTENT_SHADER_PATH, "/", format, "/", shader_file, ".json"},
+	)
+	defer delete(json_filename)
+	json_content, ok := _read_file_bytes(json_filename); assert(ok)
+	defer delete(json_content)
+
+	json.unmarshal(json_content, &res)
+
+	return res
 }
 
 // user is responsible for data deletion

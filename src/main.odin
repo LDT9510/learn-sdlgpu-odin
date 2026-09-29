@@ -40,6 +40,7 @@ Vertex_Data :: struct {
 	uv:        glm.vec2,
 }
 
+
 g_should_close := false
 g_is_capturing_mouse := false
 g_vsync := UI_bool{"VSYNC", true, false}
@@ -322,14 +323,18 @@ create_shader :: proc(
 		entrypoint = "main0"
 	}
 
+	reflect_info := content_load_shader_reflect(shader_file)
+
 	return sdl.CreateGPUShader(device, {
-		code_size 			= len(shader.code),
-		code                = raw_data(shader.code),
-		entrypoint          = entrypoint,
-		format              = format,
-		stage               = shader.stage,
-		num_uniform_buffers = NUM_UNIFORM_BUFFERS,
-		num_samplers        = num_samplers,
+		code_size 			 = len(shader.code),
+		code                 = raw_data(shader.code),
+		entrypoint           = entrypoint,
+		format               = format,
+		stage                = shader.stage,
+		num_uniform_buffers  = reflect_info.uniform_buffers,
+		num_samplers         = reflect_info.samplers,
+		num_storage_buffers  = reflect_info.storage_buffers,
+		num_storage_textures = reflect_info.storage_textures,
 	})
 }
 
@@ -525,3 +530,4 @@ upload_to_gpu :: proc(
 	sdl.ReleaseGPUTransferBuffer(device, model.transfer_buf)
 	sdl.ReleaseGPUTransferBuffer(device, model.texture.transfer_buf)
 }
+
