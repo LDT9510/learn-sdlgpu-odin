@@ -45,6 +45,7 @@ g_should_close := false
 g_is_capturing_mouse := false
 g_vsync := UI_bool{"VSYNC", true, false}
 g_camera := camera_create({0, 1, -3})
+g_clear_color := glm.vec4{0, 0.2, 0.4, 1}
 
 main :: proc() {
 	context = context_setup()
@@ -176,7 +177,7 @@ render :: proc(rd: Render_Data) {
 	color_target_info := sdl.GPUColorTargetInfo {
 		texture     = rd.target_texture,
 		load_op     = .CLEAR,
-		clear_color = {0, 0.2, 0.4, 1},
+		clear_color = sdl.FColor(g_clear_color),
 		store_op    = .STORE,
 	}
 	// describe the depth target
@@ -212,6 +213,9 @@ main_ui_window :: proc(t: Timings, w: ^sdl.Window, d: ^sdl.GPUDevice) {
 	g_vsync.toggled = im.RadioButtonIntPtr("VSYNC", cast(^i32)&g_vsync.value, 1)
 	im.SameLine()
 	g_vsync.toggled ||= im.RadioButtonIntPtr("IMMEDIATE", cast(^i32)&g_vsync.value, 0)
+
+	im.Separator()
+	im.ColorEdit4("Clear color", &g_clear_color)
 
 	if im.CollapsingHeader("Timings", {.DefaultOpen}) {
 		im.Text("FPS: %d", t.fps)
@@ -306,7 +310,6 @@ create_shader :: proc(
 ) -> ^sdl.GPUShader {
 	shader, ok := content_load_shader(shader_file)
 	assert(ok)
-	defer content_destroy_shader(shader)
 
 	format: sdl.GPUShaderFormat
 	entrypoint: cstring
@@ -354,10 +357,8 @@ load_model :: proc(
 	assert(model_ok)
 
 	// create vertex and index data from the model
-	vertices := make([]Vertex_Data, len(car_model.faces))
-	defer delete(vertices)
-	indices := make([]u16, len(car_model.faces))
-	defer delete(indices)
+	vertices := make([]Vertex_Data, len(car_model.faces), context.temp_allocator)
+	indices := make([]u16, len(car_model.faces), context.temp_allocator)
 
 	for face, i in car_model.faces {
 		vertices[i] = {

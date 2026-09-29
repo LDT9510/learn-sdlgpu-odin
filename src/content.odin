@@ -5,6 +5,7 @@ package learn_sdlgpu
 import "core:image"
 import "core:strings"
 import "core:log"
+import "core:mem"
 import "core:os"
 import "core:encoding/json"
 import "core:path/filepath"
@@ -32,9 +33,11 @@ Content_Shader_Reflect :: struct {
 
 
 content_load_image :: proc(image_name: string) -> (image_data: ^image.Image, ok: bool) {
-	image_path, fp_err := filepath.join({CONTENT_IMAGE_PATH, image_name})
+	image_path, fp_err := filepath.join(
+		{CONTENT_IMAGE_PATH, image_name},
+		context.temp_allocator,
+	)
 	assert(fp_err == .None)
-	defer delete(image_path)
 
 	// we always want RGBA
 	data, err := image.load(image_path, {.alpha_add_if_missing})
@@ -53,21 +56,21 @@ content_destroy_image :: proc(image_data: ^Content_Image) {
 }
 
 content_load_obj_model :: proc(model_name: string) -> (obj: Obj_Data, ok: bool) {
-	model_path_base, err := filepath.join({CONTENT_MODEL_PATH, model_name})
+	model_path_base, err := filepath.join(
+		{CONTENT_MODEL_PATH, model_name},
+		context.temp_allocator,
+	)
 	assert(err == .None)
-	defer delete(model_path_base)
 
-	model_path := strings.concatenate({model_path_base, ".obj"})
-	defer delete(model_path)
+	model_path := strings.concatenate({model_path_base, ".obj"}, context.temp_allocator)
 
-	data, data_ok := _read_file_bytes(model_path)
+	data, data_ok := _read_file_bytes(model_path, context.temp_allocator)
 	if !data_ok {
 		log.errorf("Failed to load model at '%s'", model_path)
 		return
 	}
 
 	obj = obj_load(data)
-	delete(data)
 
 	return obj, true
 }
@@ -79,14 +82,17 @@ content_destroy_obj_model :: proc(obj: Obj_Data) {
 content_load_shader :: proc(shader_file: string) -> (shader: Content_Shader, ok: bool) {
 	format_name := SHADER_OUT_FORMATS[CURRENT_GRAPHICS_API]
 
-	file_path_base, err := filepath.join({CONTENT_SHADER_PATH, format_name, shader_file})
+	file_path_base, err := filepath.join(
+		{CONTENT_SHADER_PATH, format_name, shader_file},
+		context.temp_allocator,
+	)
 	assert(err == .None)
-	defer delete(file_path_base)
 
-	file_name := strings.concatenate({file_path_base, ".", format_name})
-	defer delete(file_name)
+	file_name := strings.concatenate(
+		{file_path_base, ".", format_name},
+		context.temp_allocator)
 
-	code, read_ok := _read_file_bytes(file_name)
+	code, read_ok := _read_file_bytes(file_name, context.temp_allocator)
 
 	stage: sdl.GPUShaderStage
 	switch filepath.ext(shader_file) {
@@ -101,18 +107,17 @@ content_load_shader :: proc(shader_file: string) -> (shader: Content_Shader, ok:
 	return {code, stage}, read_ok
 }
 
-content_destroy_shader :: proc(shader: Content_Shader) {
-	delete(shader.code)
-}
-
 content_load_shader_reflect :: proc(shader_file: string) -> (res: Content_Shader_Reflect) {
 	format := SHADER_OUT_FORMATS[CURRENT_GRAPHICS_API]
 	json_filename := strings.concatenate(
 		{CONTENT_SHADER_PATH, "/", format, "/", shader_file, ".json"},
+		context.temp_allocator,
 	)
-	defer delete(json_filename)
-	json_content, ok := _read_file_bytes(json_filename); assert(ok)
-	defer delete(json_content)
+	json_content, ok := _read_file_bytes(
+		json_filename,
+		context.temp_allocator,
+	)
+	assert(ok)
 
 	json.unmarshal(json_content, &res)
 
@@ -121,8 +126,10 @@ content_load_shader_reflect :: proc(shader_file: string) -> (res: Content_Shader
 
 // user is responsible for data deletion
 @(private)
-_read_file_bytes :: proc(path: string) -> (file_content: []byte, ok: bool) {
-	content, error := os.read_entire_file(path, context.allocator)
+_read_file_bytes :: proc(
+	path: string, allocator: mem.Allocator,
+) -> (file_content: []byte, ok: bool) {
+	content, error := os.read_entire_file(path, context.temp_allocator)
 
 	if error != nil {
 		log.errorf("Failed to load content '%s': %v", path, error)
@@ -141,8 +148,7 @@ _with_ext :: proc(name: string, ext: string) -> string {
 _flip_image_vertically_inplace :: proc(image_data: ^image.Image) {
 	row_size_in_bytes := (image_data.depth / 8) * image_data.width * image_data.channels
 	num_rows := image_data.height
-	temp_row := make([]byte, row_size_in_bytes)
-	defer delete(temp_row)
+	temp_row := make([]byte, row_size_in_bytes, context.temp_allocator)
 
 	for i := 0; i < num_rows / 2; i += 1 {
 		top_row := image_data.pixels.buf[i * row_size_in_bytes:][:row_size_in_bytes]
