@@ -44,8 +44,8 @@ build_dev :: proc() -> string {
 build_debug :: proc(options: []string) -> string {
 	executable_name := odin_build("debug", {"debug", "linker:radlink"})
 
-	if has_option(options, .Launch) {
-		raddbg := declare_tool_requirement("Debug '-attach' (RadDebbugger)", "raddbg")
+	if has_option(options, .Raddbg) {
+		raddbg := declare_tool_requirement("Debug option '-raddbg' (RadDebbugger)", "raddbg")
 		raddbg_config := make_path("--project:..", MISC_DIR, "project.raddbg")
 		log.info("Running RadDebbugger")
 		run(
@@ -55,8 +55,8 @@ build_debug :: proc(options: []string) -> string {
 		)
 	}
 
-	if has_option(options, .Render) {
-		rd_ui := declare_tool_requirement("Debug '-render' (RenderDoc)", "renderdocui")
+	if has_option(options, .Renderdoc) {
+		rd_ui := declare_tool_requirement("Debug option '-renderdoc' (RenderDoc)", "renderdocui")
 		log.info("Running Renderdoc")
 		run(
 			{rd_ui, "capture", executable_name},

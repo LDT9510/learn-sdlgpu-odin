@@ -113,22 +113,17 @@ _sdl_log_adapter :: proc "c" (
 ) {
 	context = _g_context_internal.custom_context
 
+	level: log.Level
 	switch priority {
-	case .INVALID:
-		fallthrough
-	case .TRACE:
-		fallthrough
-	case .VERBOSE:
-		fallthrough
-	case .DEBUG:
-		log.debugf("[SDL %s] %s", category, message)
-	case .INFO:
-		log.infof("[SDL %s] %s", category, message)
-	case .WARN:
-		log.warnf("[SDL %s] %s", category, message)
-	case .ERROR:
-		log.errorf("[SDL %s] %s", category, message)
-	case .CRITICAL:
-		log.fatalf("[SDL %s] %s", category, message)
+	case .INVALID:  fallthrough
+	case .TRACE:    fallthrough
+	case .VERBOSE:  fallthrough
+	case .DEBUG:    level = .Debug
+	case .INFO:     level = .Info
+	case .WARN:     level = .Warning
+	case .ERROR:    level = .Error
+	case .CRITICAL: level = .Fatal
 	}
+
+	log.logf(level, "[SDL %s] %s", category, message)
 }

@@ -1,5 +1,7 @@
 package learn_sdlgpu
 
+import im "extern:imgui"
+
 import sdl "vendor:sdl3"
 
 WINDOW_WIDTH :: 1200
@@ -52,6 +54,29 @@ window_destroy :: proc(window: ^sdl.Window, device: ^sdl.GPUDevice) {
 	sdl.DestroyGPUDevice(device)
 	sdl.DestroyWindow(window)
 	sdl.Quit()
+}
+
+window_main_ui :: proc(t: Timings, w: ^sdl.Window, d: ^sdl.GPUDevice) {
+	im.Begin("Learning SDL_GPU")
+
+	im.Text("Current API: %s", SELECTED_GRAPHICS_API)
+	im.Separator()
+
+	g.vsync.toggled = im.RadioButtonIntPtr("VSYNC", cast(^i32)&g.vsync.value, 1)
+	im.SameLine()
+	g.vsync.toggled ||= im.RadioButtonIntPtr("IMMEDIATE", cast(^i32)&g.vsync.value, 0)
+
+	im.Separator()
+	im.ColorEdit4("Clear color", &g.clear_color)
+
+	if im.CollapsingHeader("Timings", {.DefaultOpen}) {
+		im.Text("FPS: %d", t.fps)
+		im.Text("Frame time: %.2f ms", t.frame_time_ms)
+	}
+
+	camera_dev_ui_frame(&g.camera)
+
+	defer im.End()
 }
 
 window_get_resolution :: proc(window: ^sdl.Window) -> (f32, f32) {

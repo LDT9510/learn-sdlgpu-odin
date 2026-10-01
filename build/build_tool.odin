@@ -57,8 +57,8 @@ COMMANDS_HELP := [Command]string {
 
 Option :: enum {
 	Verbose,
-	Launch,
-	Render,
+	Raddbg,
+	Renderdoc,
 	Size,
 	Vulkan,
 	Skip_Shaders,
@@ -66,8 +66,8 @@ Option :: enum {
 }
 OPTIONS_HELP := [Option]string {
 	.Verbose = "Make logging more verbose (all)",
-	.Launch = "Launch RadDebugger with the executable being built as target ('debug')" ,
-	.Render = "Launch Renderdoc with the executable being built as target ('debug')",
+	.Raddbg = "Launch RadDebugger with the executable being built as target ('debug')" ,
+	.Renderdoc = "Launch Renderdoc with the executable being built as target ('debug')",
 	.Size = "Release build optimized for size ('release')",
 	.Vulkan = "Use Vulkan as the SDL_GPU backend (all)",
 	.Skip_Shaders = "Do not build shaders. (all)",
@@ -148,6 +148,8 @@ odin_build :: proc(target_suffix: string, extra_flags: []string) -> string {
 	}
 
 	run_str(strings.to_string(sb))
+
+	log.infof("Built: %s", executable_name)
 
 	return executable_name
 }
