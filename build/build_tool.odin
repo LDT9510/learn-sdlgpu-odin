@@ -301,17 +301,18 @@ show_help_message :: proc() {
 
 	sb := strings.builder_make()
 
-	descriptions :: proc($T: typeid, desc_map: []string, sb: ^strings.Builder) -> string {
+	descriptions :: proc(desc_map: [$T]string, sb: ^strings.Builder, prefix := "") -> string {
 		strings.builder_reset(sb)
 
 		for field in reflect.enum_fields_zipped(T) {
 			strings.write_string(sb, "\n\t")
+			strings.write_string(sb, prefix)
 			strings.write_string(sb, strings.to_lower(field.name))
-			name_size := len(field.name)
+			name_size := len(prefix) + len(field.name)
 			for _ in 0..<(15 - name_size) {
 				strings.write_string(sb, " ")
 			}
-			strings.write_string(sb, desc_map[field.value])
+			strings.write_string(sb, desc_map[cast(T)field.value])
 		}
 
 		return strings.clone(strings.to_string(sb^))
@@ -319,8 +320,8 @@ show_help_message :: proc() {
 
 	log.infof(
 		message,
-		descriptions(Command, slice.enumerated_array(&COMMANDS_HELP), &sb),
-		descriptions(Option, slice.enumerated_array(&OPTIONS_HELP), &sb),
+		descriptions(COMMANDS_HELP, &sb),
+		descriptions(OPTIONS_HELP, &sb, "-"),
 	)
 }
 

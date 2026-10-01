@@ -40,7 +40,6 @@ Vertex_Data :: struct {
 	uv:        glm.vec2,
 }
 
-
 g_should_close := false
 g_is_capturing_mouse := false
 g_vsync := UI_bool{"VSYNC", true, false}
@@ -130,7 +129,7 @@ main :: proc() {
 				sdl.SetGPUSwapchainParameters(
 					device,
 					window,
-					.SDR,
+					.SDR_LINEAR,
 					g_vsync.value ? .VSYNC : .IMMEDIATE,
 				),
 			)
@@ -177,7 +176,7 @@ render :: proc(rd: Render_Data) {
 	color_target_info := sdl.GPUColorTargetInfo {
 		texture     = rd.target_texture,
 		load_op     = .CLEAR,
-		clear_color = sdl.FColor(g_clear_color),
+		clear_color = sdl.FColor(glm.pow(g_clear_color,  2.2)),
 		store_op    = .STORE,
 	}
 	// describe the depth target
@@ -445,7 +444,7 @@ load_texture :: proc(
 	// create texture on GPU
 	texture.handle = sdl.CreateGPUTexture(device, {
 		type = .D2,
-		format = .R8G8B8A8_UNORM,
+		format = .R8G8B8A8_UNORM_SRGB,
 		usage = {.SAMPLER},
 		width = cast(u32)img.width,
 		height = cast(u32)img.height,

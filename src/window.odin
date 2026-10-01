@@ -42,7 +42,7 @@ window_create_and_device :: proc() -> (^sdl.Window, ^sdl.GPUDevice) {
 	sdl_assert_ptr(device, "Could not create GPU device")
 
 	sdl_assert(sdl.ClaimWindowForGPUDevice(device, window))
-	sdl_assert(sdl.SetGPUSwapchainParameters(device, window, .SDR, .VSYNC))
+	sdl_assert(sdl.SetGPUSwapchainParameters(device, window, .SDR_LINEAR, .VSYNC))
 
 	return window, device
 }
