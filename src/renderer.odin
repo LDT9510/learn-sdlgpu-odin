@@ -112,35 +112,41 @@ renderer_create_shader :: proc(
 	})
 }
 
-renderer_upload_to_gpu :: proc(
-	device: ^sdl.GPUDevice,
-	model: Model,
+renderer_upload_game_data :: proc(
+	game: Game,
 ) {
+	copy_cmd_buf := sdl.AcquireGPUCommandBuffer(g.device)
 	// begin a copy pass
-	copy_cmd_buf := sdl.AcquireGPUCommandBuffer(device)
 	copy_pass := sdl.BeginGPUCopyPass(copy_cmd_buf)
 
-	// invoke upload command
-	sdl.UploadToGPUBuffer(copy_pass,
-		{transfer_buffer = model.transfer_buf},
-		{buffer = model.vertex_buf, size = model.vertex_size},
-		false)
+	for entt in game.entities {
+		model := entt.model
 
-	sdl.UploadToGPUBuffer(copy_pass,
-		{transfer_buffer = model.transfer_buf, offset = model.vertex_size},
-		{buffer = model.index_buf, size = model.index_size},
-		false)
+		// invoke upload command
+		sdl.UploadToGPUBuffer(copy_pass,
+			{transfer_buffer = model.transfer_buf},
+			{buffer = model.vertex_buf, size = model.vertex_size},
+			false)
 
-	sdl.UploadToGPUTexture(copy_pass,
-		{transfer_buffer = model.texture.transfer_buf},
-		{texture = model.texture.handle, w = model.texture.x, h = model.texture.y, d = 1},
-		false)
+		sdl.UploadToGPUBuffer(copy_pass,
+			{transfer_buffer = model.transfer_buf, offset = model.vertex_size},
+			{buffer = model.index_buf, size = model.index_size},
+			false)
+
+		// after submit is safe to release the transfer buffers
+		sdl.ReleaseGPUTransferBuffer(g.device, model.transfer_buf)
+	}
+
+	for tex in game.textures {
+		sdl.UploadToGPUTexture(copy_pass,
+			{transfer_buffer = tex.transfer_buf},
+			{texture = tex.handle, w = tex.x, h = tex.y, d = 1},
+			false)
+
+		sdl.ReleaseGPUTransferBuffer(g.device, tex.transfer_buf)
+	}
 
 	// end copy pass and submit
 	sdl.EndGPUCopyPass(copy_pass)
 	sdl_assert(sdl.SubmitGPUCommandBuffer(copy_cmd_buf))
-
-	// after submit is safe to release the transfer buffers
-	sdl.ReleaseGPUTransferBuffer(device, model.transfer_buf)
-	sdl.ReleaseGPUTransferBuffer(device, model.texture.transfer_buf)
 }

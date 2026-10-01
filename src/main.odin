@@ -23,7 +23,7 @@ g: struct {
 	should_close       = false,
 	is_capturing_mouse = false,
 	vsync              = {"VSYNC",true, false},
-	camera             = camera_create({0, 1, -3}),
+	camera             = camera_create({0, 1, -13}),
 	clear_color        = {0, 0.2, 0.4, 1},
 }
 

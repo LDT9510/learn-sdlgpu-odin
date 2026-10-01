@@ -5,28 +5,60 @@ import sdl "vendor:sdl3"
 
 Transform :: struct {
 	pos: glm.vec3,
-	angle: f32,
+	rot: quaternion128,
 	scale: f32,
 }
 
+transform :: proc(
+	pos: glm.vec3 = 0,
+	rot: quaternion128 = 1,
+	scale: f32 = 1.0,
+) -> Transform {
+	return {pos, rot, scale}
+}
+
+Entity_Id :: enum {
+	Tractor,
+	Ambulance,
+	Sedan,
+}
+
 Entity :: struct {
-	model: Model,
+	id: Entity_Id,
+	model: ^Model,
 	trans: Transform,
 }
 
+// need proper assets system and entity management
 Game :: struct {
 	entities: [dynamic]Entity,
+	textures: [dynamic]Texture,
+	models  : [dynamic]Model,
 }
 
 game_init :: proc() -> (game: Game){
-	entity := Entity{
-		model = model_load(g.device, "tractor-police", "colormap.png"),
-		trans = { scale = 1.0 },
-	}
+	append(&game.textures, texture_load(g.device, "colormap.png"))
+	append(&game.models,   model_load(g.device,   "tractor-police", &game.textures[0]))
+	append(&game.models,   model_load(g.device,   "ambulance",      &game.textures[0]))
+	append(&game.models,   model_load(g.device,   "sedan-sports",   &game.textures[0]))
 
-	renderer_upload_to_gpu(g.device, entity.model)
+	append(&game.entities, Entity{
+		id = .Tractor,
+		model = &game.models[0],
+		trans = transform(),
+	})
+	append(&game.entities, Entity{
+		id = .Ambulance,
+		model = &game.models[1],
+		trans = transform({6.0, 0.0, 0.0}, scale = 2.0),
+	})
+	append(&game.entities, Entity{
+		id = .Sedan,
+		model = &game.models[2],
+		trans = transform({-4.0, 0.0, 0.0}, scale = 0.5),
+	})
 
-	append(&game.entities, entity)
+	renderer_upload_game_data(game)
 
 	return game
 }
@@ -43,7 +75,14 @@ game_update :: proc(game: ^Game, timings: Timings) {
 
 	for &entt in game.entities {
 		entt.trans.pos.x += glm.cos(time) * x_trans_speed * timings.delta_time
-		entt.trans.angle += rot_speed * timings.delta_time
+		switch entt.id {
+		case .Tractor:
+			entt.trans.rot *= glm.quatAxisAngle({1, 0, 0}, rot_speed * timings.delta_time)
+		case .Ambulance:
+			entt.trans.rot *= glm.quatAxisAngle({0, 1, 0}, rot_speed * timings.delta_time)
+		case .Sedan:
+			entt.trans.rot *= glm.quatAxisAngle({0, 0, 1}, rot_speed * timings.delta_time)
+		}
 		entt.trans.scale += glm.cos(time) * scaling_amplitude * timings.delta_time
 	}
 }
@@ -108,16 +147,22 @@ game_render :: proc(
 }
 
 game_destroy :: proc(game: Game) {
-	for entt in game.entities {
-		model_destroy(g.device, entt.model)
+	for model in game.models {
+		model_destroy(g.device, model)
+	}
+
+	for tex in game.textures {
+		texture_destroy(g.device, tex)
 	}
 
 	delete(game.entities)
+	delete(game.models)
+	delete(game.textures)
 }
 
 _get_model_mat :: proc(transform: Transform) -> glm.mat4 {
 	model := glm.mat4Translate(transform.pos)
-	model *= glm.mat4Rotate({0, 1, 0}, transform.angle)
+	model *= glm.mat4FromQuat(transform.rot)
 	model *= glm.mat4Scale(transform.scale)
 
 	return model
