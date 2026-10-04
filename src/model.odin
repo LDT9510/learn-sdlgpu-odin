@@ -26,6 +26,7 @@ model_load :: proc(
 		vertices[i] = {
 			positions = car_model.positions[face.pos],
 			uv = car_model.uvs[face.uv],
+			normal = car_model.normals[face.normal],
 		}
 		indices[i] = u16(i)
 	}

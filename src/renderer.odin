@@ -6,6 +6,7 @@ import sdl "vendor:sdl3"
 Vertex_Data :: struct {
 	positions: glm.vec3,
 	uv:        glm.vec2,
+	normal:    glm.vec3,
 }
 
 Render_State :: struct {
@@ -17,9 +18,19 @@ Render_State :: struct {
 
 // must be aligned to 16 bytes as required by the std140 layout
 UBO :: struct #max_field_align(16) {
-	mvp: glm.mat4,
+	vp: glm.mat4,
+	m:  glm.mat4,
 }
+
+Global_Frag_UBO :: struct #packed {
+	lightPosition:  glm.vec3,
+	_pad: f32,
+	lightColor:     glm.vec3,
+	lightIntensity: f32,
+}
+
 #assert(size_of(UBO) <= 128) // max recommended for uniforms
+#assert(size_of(Global_Frag_UBO) <= 128) // max recommended for uniforms
 
 renderer_create_pipeline :: proc(
 	device: ^sdl.GPUDevice,
@@ -36,6 +47,7 @@ renderer_create_pipeline :: proc(
 	vertex_attrs := []sdl.GPUVertexAttribute {
 		{location = 0, format = .FLOAT3, offset = 0}, // position
 		{location = 1, format = .FLOAT2, offset = cast(u32)offset_of(Vertex_Data, uv)}, // texture coords
+		{location = 2, format = .FLOAT3, offset = cast(u32)offset_of(Vertex_Data, normal)}, // normals
 	}
 
 	// create the pipeline

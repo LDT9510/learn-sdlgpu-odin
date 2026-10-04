@@ -69,6 +69,11 @@ window_main_ui :: proc(t: Timings, w: ^sdl.Window, d: ^sdl.GPUDevice) {
 	im.Separator()
 	im.ColorEdit4("Clear color", &g.clear_color)
 
+	im.SeparatorText("Light")
+	im.DragFloat3("Position##Light", &g.light.position, 0.1, -10, 10)
+	im.ColorEdit3("Color", &g.light.color, {.Float})
+	im.DragFloat("Intenstity", &g.light.intensity, 0.01, 0, 1000)
+
 	if im.CollapsingHeader("Timings", {.DefaultOpen}) {
 		im.Text("FPS: %d", t.fps)
 		im.Text("Frame time: %.2f ms", t.frame_time_ms)

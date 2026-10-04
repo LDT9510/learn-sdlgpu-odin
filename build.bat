@@ -2,7 +2,7 @@
 
 :: Set to "yes" for development of the build tool
 :: Delete %out_dir% after disabling development mode
-set DEV=yes
+set DEV=no
 
 :: Output directory for temporary files, safe to delete
 set out_dir=.out

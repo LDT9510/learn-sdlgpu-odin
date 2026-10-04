@@ -12,19 +12,29 @@ UI_bool :: struct {
 }
 
 g: struct {
-	window           : ^sdl.Window,
-	device           : ^sdl.GPUDevice,
-	should_close       : bool,
-	is_capturing_mouse : bool,
-	vsync              : UI_bool,
-	camera             : Camera,
-	clear_color        : glm.vec4,
+	window:             ^sdl.Window,
+	device:             ^sdl.GPUDevice,
+	should_close:       bool,
+	is_capturing_mouse: bool,
+	vsync:              UI_bool,
+	camera:             Camera,
+	clear_color:        glm.vec4,
+	light: 				struct {
+		intensity: f32,
+		position:  glm.vec3,
+		color:     glm.vec3,
+	},
 } = {
 	should_close       = false,
 	is_capturing_mouse = false,
 	vsync              = {"VSYNC",true, false},
 	camera             = camera_create({0, 1, -13}),
-	clear_color        = {0, 0.2, 0.4, 1},
+	clear_color        = {0, 0, 0, 1},
+	light = {
+		intensity = 1,
+		position  = {3, 3, 3},
+		color     = {1, 1, 1},
+	},
 }
 
 main :: proc() {

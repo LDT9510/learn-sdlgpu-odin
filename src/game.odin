@@ -77,11 +77,11 @@ game_update :: proc(game: ^Game, timings: Timings) {
 		entt.trans.pos.x += glm.cos(time) * x_trans_speed * timings.delta_time
 		switch entt.id {
 		case .Tractor:
-			entt.trans.rot *= glm.quatAxisAngle({1, 0, 0}, rot_speed * timings.delta_time)
-		case .Ambulance:
 			entt.trans.rot *= glm.quatAxisAngle({0, 1, 0}, rot_speed * timings.delta_time)
+		case .Ambulance:
+			// entt.trans.rot *= glm.quatAxisAngle({0, 1, 0}, rot_speed * timings.delta_time)
 		case .Sedan:
-			entt.trans.rot *= glm.quatAxisAngle({0, 0, 1}, rot_speed * timings.delta_time)
+			// entt.trans.rot *= glm.quatAxisAngle({0, 0, 1}, rot_speed * timings.delta_time)
 		}
 		entt.trans.scale += glm.cos(time) * scaling_amplitude * timings.delta_time
 	}
@@ -121,11 +121,26 @@ game_render :: proc(
 	for entt in game.entities {
 		model_m := _get_model_mat(entt.trans)
 		view_m  := camera_get_view_matrix(g.camera)
-		mvp     := projection_mat * view_m * model_m
 
 		// push uniforms
 		sdl.PushGPUVertexUniformData(
-			rd.command_buffer, 0, &UBO{mvp = mvp }, size_of(UBO),
+			rd.command_buffer,
+			0,
+			&UBO{
+				vp = projection_mat * view_m,
+				m = model_m,
+			},
+			size_of(UBO),
+		)
+		sdl.PushGPUFragmentUniformData(
+			rd.command_buffer,
+			0,
+			&Global_Frag_UBO{
+				lightPosition  = g.light.position,
+				lightColor     = g.light.color,
+				lightIntensity = g.light.intensity,
+			},
+			size_of(Global_Frag_UBO),
 		)
 		// bind index and vertex data, and samplers
 		sdl.BindGPUIndexBuffer(render_pass, {buffer = entt.model.index_buf}, ._16BIT)
