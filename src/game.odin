@@ -1,5 +1,7 @@
 package learn_sdlgpu
 
+import im "extern:imgui"
+
 import glm "core:math/linalg/glsl"
 import sdl "vendor:sdl3"
 
@@ -25,6 +27,7 @@ Entity_Id :: enum {
 
 Entity :: struct {
 	id: Entity_Id,
+	name: cstring,
 	model: ^Model,
 	trans: Transform,
 }
@@ -38,24 +41,44 @@ Game :: struct {
 
 game_init :: proc() -> (game: Game){
 	append(&game.textures, texture_load(g.device, "colormap.png"))
-	append(&game.models,   model_load(g.device,   "tractor-police", &game.textures[0]))
-	append(&game.models,   model_load(g.device,   "ambulance",      &game.textures[0]))
-	append(&game.models,   model_load(g.device,   "sedan-sports",   &game.textures[0]))
+
+	rough_material := Material {
+		diffuse = &game.textures[0],
+		specular = 0,
+		shininess = 1,
+	}
+	shinny_material := Material {
+		diffuse = &game.textures[0],
+		specular = 1,
+		shininess = 160,
+	}
+	reddish_material := Material {
+		diffuse = &game.textures[0],
+		specular = {1, 0, 0},
+		shininess = 80,
+	}
+
+	append(&game.models,   model_load(g.device,   "tractor-police", rough_material))
+	append(&game.models,   model_load(g.device,   "ambulance",      reddish_material))
+	append(&game.models,   model_load(g.device,   "sedan-sports",   shinny_material))
 
 	append(&game.entities, Entity{
 		id = .Tractor,
+		name = "tractor",
 		model = &game.models[0],
 		trans = transform(),
 	})
 	append(&game.entities, Entity{
 		id = .Ambulance,
+		name = "ambulance",
 		model = &game.models[1],
 		trans = transform({6.0, 0.0, 0.0}, scale = 2.0),
 	})
 	append(&game.entities, Entity{
 		id = .Sedan,
+		name = "sedan",
 		model = &game.models[2],
-		trans = transform({-4.0, 0.0, 0.0}, scale = 0.5),
+		trans = transform({-4.0, 0.0, 0.0}, scale = 1.5),
 	})
 
 	renderer_upload_game_data(game)
@@ -118,30 +141,38 @@ game_render :: proc(
 	// bind pipeline
 	sdl.BindGPUGraphicsPipeline(render_pass, rd.pipeline)
 
+	view_m  := camera_get_view_matrix(g.camera)
+	global_ubo := Global_UBO {
+		view_projection_mat = projection_mat * view_m,
+	}
+
+	global_frag_ubo := Global_Frag_UBO {
+		light_position  = g.light.position,
+		light_color     = g.light.color,
+		light_intensity = g.light.intensity,
+		view_position   = g.camera.position,
+		ambient_light   = g.light.ambient,
+	}
+
 	for entt in game.entities {
 		model_m := _get_model_mat(entt.trans)
-		view_m  := camera_get_view_matrix(g.camera)
+
+		local_ubo := Local_UBO {
+			model_mat = model_m,
+			normal_mat = glm.inverse_transpose(model_m),
+		}
+
+		local_frag_ubo := Local_Frag_UBO {
+			specular_color = entt.model.material.specular,
+			shininess = entt.model.material.shininess,
+		}
 
 		// push uniforms
-		sdl.PushGPUVertexUniformData(
-			rd.command_buffer,
-			0,
-			&UBO{
-				vp = projection_mat * view_m,
-				m = model_m,
-			},
-			size_of(UBO),
-		)
-		sdl.PushGPUFragmentUniformData(
-			rd.command_buffer,
-			0,
-			&Global_Frag_UBO{
-				lightPosition  = g.light.position,
-				lightColor     = g.light.color,
-				lightIntensity = g.light.intensity,
-			},
-			size_of(Global_Frag_UBO),
-		)
+		sdl.PushGPUVertexUniformData(rd.command_buffer, 0, &global_ubo, size_of(Global_UBO))
+		sdl.PushGPUVertexUniformData(rd.command_buffer, 1, &local_ubo, size_of(Local_UBO))
+		sdl.PushGPUFragmentUniformData(rd.command_buffer, 0, &global_frag_ubo, size_of(Global_Frag_UBO))
+		sdl.PushGPUFragmentUniformData(rd.command_buffer, 1, &local_frag_ubo, size_of(Local_Frag_UBO))
+
 		// bind index and vertex data, and samplers
 		sdl.BindGPUIndexBuffer(render_pass, {buffer = entt.model.index_buf}, ._16BIT)
 		sdl.BindGPUVertexBuffers(
@@ -150,7 +181,7 @@ game_render :: proc(
 		sdl.BindGPUFragmentSamplers(
 			render_pass,
 			0,
-			&sdl.GPUTextureSamplerBinding{entt.model.texture.handle, entt.model.texture.sampler},
+			&sdl.GPUTextureSamplerBinding{entt.model.material.diffuse.handle, entt.model.material.diffuse.sampler},
 			1,
 		)
 		// draw calls
@@ -159,6 +190,19 @@ game_render :: proc(
 	}
 	// end drawing
 	sdl.EndGPURenderPass(render_pass)
+}
+
+game_devui_frame :: proc(game: ^Game) {
+	if im.CollapsingHeader("Game", {.DefaultOpen}) {
+		for entt in game.entities {
+			im.PushID(entt.name)
+			defer im.PopID()
+
+			im.SeparatorText(entt.name)
+			im.ColorEdit3("Specular color", &entt.model.material.specular)
+			im.DragFloat("Shininess", &entt.model.material.shininess)
+		}
+	}
 }
 
 game_destroy :: proc(game: Game) {

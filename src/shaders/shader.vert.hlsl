@@ -1,6 +1,10 @@
-cbuffer UBO: register(b0, space1) { // TODO separate local and global UBOs
-    float4x4 VP;
-    float4x4 M;
+cbuffer Global: register(b0, space1) {
+    float4x4 ViewProjectionMat;
+};
+
+cbuffer Local: register(b1, space1) {
+    float4x4 ModelMat;
+    float4x4 NormalMat;
 };
 
 struct Input {
@@ -17,13 +21,13 @@ struct Output {
 };
 
 Output main(Input input) {
-    float4 worldPosition = mul(M, float4(input.Position, 1.0));
+    float4 worldPosition = mul(ModelMat, float4(input.Position, 1.0));
 
     Output output;
-    output.ClipPosition = mul(VP, worldPosition);
+    output.ClipPosition = mul(ViewProjectionMat, worldPosition);
     output.UV = input.UV;
     output.Position = worldPosition.xyz;
-    output.Normal = normalize(mul(M, float4(input.Normal, 0)).xyz); // TODO fix non-uniform scale
+    output.Normal = normalize(mul(NormalMat, float4(input.Normal, 0)).xyz);
 
     return output;
 }

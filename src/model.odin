@@ -1,19 +1,26 @@
 package learn_sdlgpu
 
 import "core:mem"
+import glm "core:math/linalg/glsl"
 import sdl "vendor:sdl3"
+
+Material :: struct {
+	diffuse:   ^Texture,
+	specular:  glm.vec3,
+	shininess: f32,
+}
 
 Model :: struct {
 	vertex_buf, index_buf: ^sdl.GPUBuffer,
 	vertex_size, index_size, num_indices: u32,
-	texture: ^Texture,
 	transfer_buf: ^sdl.GPUTransferBuffer,
+	material: Material,
 }
 
 model_load :: proc(
 	device: ^sdl.GPUDevice,
 	model_name: string,
-	texture: ^Texture,
+	material: Material,
 ) -> (model: Model) {
 	car_model, model_ok := content_load_obj_model(model_name)
 	assert(model_ok)
@@ -62,8 +69,8 @@ model_load :: proc(
 	// unmap the buffer (must be done before unload)
 	sdl.UnmapGPUTransferBuffer(device, model.transfer_buf)
 
-	// assign the corresponding texture
-	model.texture = texture
+	// assign the corresponding material
+	model.material = material
 
 	return model
 }

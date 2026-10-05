@@ -56,7 +56,7 @@ window_destroy :: proc(window: ^sdl.Window, device: ^sdl.GPUDevice) {
 	sdl.Quit()
 }
 
-window_main_ui :: proc(t: Timings, w: ^sdl.Window, d: ^sdl.GPUDevice) {
+window_main_ui :: proc(t: Timings, w: ^sdl.Window, d: ^sdl.GPUDevice, game: ^Game) {
 	im.Begin("Learning SDL_GPU")
 
 	im.Text("Current API: %s", SELECTED_GRAPHICS_API)
@@ -72,6 +72,7 @@ window_main_ui :: proc(t: Timings, w: ^sdl.Window, d: ^sdl.GPUDevice) {
 	im.SeparatorText("Light")
 	im.DragFloat3("Position##Light", &g.light.position, 0.1, -10, 10)
 	im.ColorEdit3("Color", &g.light.color, {.Float})
+	im.ColorEdit3("Ambient", &g.light.ambient, {.Float})
 	im.DragFloat("Intenstity", &g.light.intensity, 0.01, 0, 1000)
 
 	if im.CollapsingHeader("Timings", {.DefaultOpen}) {
@@ -80,6 +81,7 @@ window_main_ui :: proc(t: Timings, w: ^sdl.Window, d: ^sdl.GPUDevice) {
 	}
 
 	camera_dev_ui_frame(&g.camera)
+	game_devui_frame(game)
 
 	defer im.End()
 }

@@ -17,19 +17,33 @@ Render_State :: struct {
 }
 
 // must be aligned to 16 bytes as required by the std140 layout
-UBO :: struct #max_field_align(16) {
-	vp: glm.mat4,
-	m:  glm.mat4,
+Global_UBO :: struct #max_field_align(16) {
+	view_projection_mat: glm.mat4,
+}
+
+Local_UBO :: struct #max_field_align(16) {
+	model_mat:  glm.mat4,
+	normal_mat:  glm.mat4,
 }
 
 Global_Frag_UBO :: struct #packed {
-	lightPosition:  glm.vec3,
-	_pad: f32,
-	lightColor:     glm.vec3,
-	lightIntensity: f32,
+	light_position:  glm.vec3,
+	_pad0:           f32,
+	light_color:     glm.vec3,
+	light_intensity: f32,
+	view_position:   glm.vec3,
+	_pad1:           f32,
+	ambient_light:   glm.vec3,
 }
 
-#assert(size_of(UBO) <= 128) // max recommended for uniforms
+Local_Frag_UBO :: struct #packed {
+	specular_color: glm.vec3,
+	shininess:      f32,
+}
+
+// max recommended for uniforms
+#assert(size_of(Global_UBO) <= 128)
+#assert(size_of(Local_UBO) <= 128)
 #assert(size_of(Global_Frag_UBO) <= 128) // max recommended for uniforms
 
 renderer_create_pipeline :: proc(

@@ -120,7 +120,7 @@ camera_on_mouse_wheel_scroll :: proc(
 }
 
 camera_dev_ui_frame :: proc(c: ^Camera) {
-	if im.CollapsingHeader("Camera", {.DefaultOpen}) {
+	if im.CollapsingHeader("Camera") {
 		im.Checkbox("Flying Camera", &c.fly)
 		im.SliderFloat("FOV", &c.zoom, 10.0, 120.0, "%.0f deg")
 		im.SliderFloat("Speed", &c.movement_speed, 1.0, 50.0, "%.1f")

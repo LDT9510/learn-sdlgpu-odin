@@ -23,6 +23,7 @@ g: struct {
 		intensity: f32,
 		position:  glm.vec3,
 		color:     glm.vec3,
+		ambient:   glm.vec3,
 	},
 } = {
 	should_close       = false,
@@ -32,8 +33,9 @@ g: struct {
 	clear_color        = {0, 0, 0, 1},
 	light = {
 		intensity = 1,
-		position  = {3, 3, 3},
-		color     = {1, 1, 1},
+		position  = 3,
+		color     = 1,
+		ambient   = 0.01,
 	},
 }
 
@@ -107,7 +109,7 @@ main :: proc() {
 
 			// render ui
 			devui_begin_frame()
-			window_main_ui(timings, g.window, g.device)
+			window_main_ui(timings, g.window, g.device, &game)
 			devui_render_frame(swapchain_tex, cmd_buf)
 		}
 
