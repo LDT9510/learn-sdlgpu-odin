@@ -16,12 +16,12 @@ Render_State :: struct {
 	pipeline:       ^sdl.GPUGraphicsPipeline,
 }
 
-// must be aligned to 16 bytes as required by the std140 layout
-Global_UBO :: struct #max_field_align(16) {
+// must be aligned to 16 bytes
+Global_UBO :: struct #packed {
 	view_projection_mat: glm.mat4,
 }
 
-Local_UBO :: struct #max_field_align(16) {
+Local_UBO :: struct #packed {
 	model_mat:  glm.mat4,
 	normal_mat:  glm.mat4,
 }
