@@ -26,16 +26,19 @@ Graphics_API :: enum {
 	DirectX12,
 	Metal,
 }
+@rodata
 SHADER_OUT_FORMATS := [Graphics_API]string {
 	.Vulkan = "spv",
 	.DirectX12 = "dxil",
 	.Metal = "msl",
 }
+@rodata
 G_API_SDL_DRIVER_NAME := [Graphics_API]string {
 	.Vulkan = "vulkan",
 	.DirectX12 = "direct3d12",
 	.Metal = "metal",
 }
+@rodata
 G_API_SHORT_NAME := [Graphics_API]string {
 	.Vulkan = "vk",
 	.DirectX12 = "dx12",
@@ -48,7 +51,7 @@ Command :: enum {
 	Release,
 	Help,
 }
-COMMANDS_HELP := [Command]string {
+COMMANDS_HELP :: [Command]string {
 	.Dev = "Fast compilation with minimal optimizations. For development.",
 	.Debug = "Retains debug information and disable optimizations. For debugging.",
 	.Release = "Can be optimized for speed or size. For distribution.",
@@ -64,7 +67,7 @@ Option :: enum {
 	Skip_Shaders,
 	Run,
 }
-OPTIONS_HELP := [Option]string {
+OPTIONS_HELP :: [Option]string {
 	.Verbose = "Make logging more verbose (all)",
 	.Raddbg = "Launch RadDebugger with the executable being built as target ('debug')" ,
 	.Renderdoc = "Launch Renderdoc with the executable being built as target ('debug')",

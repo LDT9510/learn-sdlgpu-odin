@@ -8,15 +8,15 @@ import "core:log"
 PROJECT_NAME :: "learn_sdlgpu"
 SOURCE_DIR   :: "src"
 
-DEFINITIONS := [?]Named_Prop{
+DEFINITIONS :: [?]Named_Prop{
 	{"CONTENT_ROOT", ".."},
 }
 
-VETTABLE_PACKAGES := [?]string {
+VETTABLE_PACKAGES :: [?]string {
 	PROJECT_NAME,
 }
 
-WARNING_FLAGS := [?]string {
+WARNING_FLAGS :: [?]string {
 	"vet",
 	"vet-semicolon",
 	"vet-style",
@@ -25,7 +25,7 @@ WARNING_FLAGS := [?]string {
 	"strict-style",
 }
 
-COLLECTIONS := [?]Named_Prop {
+COLLECTIONS :: [?]Named_Prop {
 	{"extern", "extern"},
 	{"main",   "src"},
 }
