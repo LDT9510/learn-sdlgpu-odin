@@ -66,6 +66,8 @@ Option :: enum {
 	Vulkan,
 	Skip_Shaders,
 	Run,
+	Boot,
+	Bootdev,
 }
 OPTIONS_HELP :: [Option]string {
 	.Verbose = "Make logging more verbose (all)",
@@ -75,6 +77,9 @@ OPTIONS_HELP :: [Option]string {
 	.Vulkan = "Use Vulkan as the SDL_GPU backend (all)",
 	.Skip_Shaders = "Do not build shaders. (all)",
 	.Run = "Run the executable being build. (all)",
+	// These are handled by the build bootstrap script
+	.Boot = "Compile the build tool (all)",
+	.Bootdev = "Compile the build tool in debug mode (all)",
 }
 
 Named_Prop :: struct {
