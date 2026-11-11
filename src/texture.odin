@@ -23,10 +23,10 @@ texture_load :: proc(
 	// copy to transfer buffer
 	texture.transfer_buf = sdl.CreateGPUTransferBuffer(device, {
 		usage = .UPLOAD,
-		size  = cast(u32)len(img.pixels.buf),
+		size  = cast(u32)len(img.pixels),
 	})
 	tex_transfer_mem := sdl.MapGPUTransferBuffer(device, texture.transfer_buf, false)
-	mem.copy(tex_transfer_mem, raw_data(img.pixels.buf), len(img.pixels.buf))
+	mem.copy(tex_transfer_mem, raw_data(img.pixels), len(img.pixels))
 
 	// unmap
 	sdl.UnmapGPUTransferBuffer(device, texture.transfer_buf)

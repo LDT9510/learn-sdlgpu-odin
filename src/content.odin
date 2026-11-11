@@ -146,14 +146,13 @@ _with_ext :: proc(name: string, ext: string) -> string {
 
 @private
 _flip_image_vertically_inplace :: proc(image_data: ^image.Image) {
-	row_size_in_bytes := (image_data.depth / 8) * image_data.width * image_data.channels
+	row_byte_size := (image_data.depth / 8) * image_data.width * image_data.channels
 	num_rows := image_data.height
-	temp_row := make([]byte, row_size_in_bytes, context.temp_allocator)
+	temp_row := make([]byte, row_byte_size, context.temp_allocator)
 
 	for i := 0; i < num_rows / 2; i += 1 {
-		top_row := image_data.pixels.buf[i * row_size_in_bytes:][:row_size_in_bytes]
-		bottom_row := image_data.pixels.buf[(num_rows - i - 1) *
-		row_size_in_bytes:][:row_size_in_bytes]
+		top_row := image_data.pixels[i * row_byte_size:][:row_byte_size]
+		bottom_row := image_data.pixels[(num_rows - i - 1) * row_byte_size:][:row_byte_size]
 		copy(temp_row[:], top_row[:])
 		copy(top_row[:], bottom_row[:])
 		copy(bottom_row[:], temp_row[:])
